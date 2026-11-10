@@ -1,0 +1,85 @@
+{
+  "expo": {
+    "name": "Honeymoon Guide",
+    "slug": "honeymoon-guide",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#10263F"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "여행 사진을 촬영합니다.",
+        "NSPhotoLibraryUsageDescription": "갤러리에서 추억 사진을 불러옵니다.",
+        "NSLocationWhenInUseUsageDescription": "일정 지도와 메모 위치를 저장합니다."
+      }
+    },
+    "android": {
+      "package": "com.honeymoon.guide",
+      "adaptiveIcon": {
+        "backgroundColor": "#10263F",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA",
+        "READ_MEDIA_IMAGES",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "YOUR_GOOGLE_MAPS_API_KEY"
+        }
+      }
+    },
+    "plugins": [
+      "expo-location",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "갤러리에서 추억 사진을 불러옵니다.",
+          "cameraPermission": "여행 사진을 촬영합니다."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "여행 사진을 촬영합니다."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "하이라이트 영상을 저장합니다.",
+          "savePhotosPermission": "하이라이트 영상을 갤러리에 저장합니다.",
+          "isAccessMediaLocationEnabled": true
+        }
+      ],
+      "expo-font"
+    ],
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "name": "Honeymoon Guide Preview"
+    },
+    "extra": {
+      "googleMapsApiKey": "AIzaSyBZEGAcwr9dLC8rgAvC4s6XFGYt_WHqYa0",
+      "supabaseUrl": "https://brolqzfhklltzhgmuwxn.supabase.co",
+      "supabaseAnonKey": "sb_publishable_2qXo0jBll5loV5FTV01ZPA_I-B0ZF59",
+      "eas": {
+        "projectId": "15b6fd23-6df6-4760-b98f-3cfa38c10cfc"
+      }
+    },
+    "owner": "shinukjin"
+  }
+}
