@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Private Honeymoon Guide
 
 스페인·포르투갈 신혼여행용 개인 앱입니다. 관리자 웹에서 일정·바우처를 준비하고, 안드로이드 앱에서 오프라인으로 보고 메모·사진을 남깁니다. 사진 원본은 기기에만 두고 메타데이터만 서버에 저장합니다.
@@ -54,3 +55,7 @@ npx expo install ffmpeg-kit-react-native
 ```
 
 설치 후 `npx expo prebuild -p android`를 다시 실행하세요.
+=======
+# travel-app
+신혼여행갈때 사용하려고 만든 앱
+>>>>>>> 73e359c68e3b415c6477999d27e559d6f2d3ed11

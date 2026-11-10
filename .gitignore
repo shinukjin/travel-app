@@ -22,3 +22,8 @@ Thumbs.db
 
 .env
 .env.local
+
+# Android APK / XAPK
+*.apk
+*.xapk
+*.aab
