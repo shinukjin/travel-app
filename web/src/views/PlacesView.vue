@@ -6,7 +6,10 @@
         <h2>장소 관리</h2>
         <p class="lead">맛집·관광·숙소·교통 카드를 등록합니다. 지도에서 고르거나 검색하면 좌표가 채워집니다.</p>
       </div>
-      <button type="button" @click="openCreate">장소 등록</button>
+      <div class="actions">
+        <button type="button" class="ghost" @click="catalogOpen = true">추천 관광지에서 찾기</button>
+        <button type="button" @click="openCreate">장소 등록</button>
+      </div>
     </div>
 
     <div class="panel">
@@ -82,6 +85,7 @@
         </div>
       </form>
     </aside>
+    <CatalogPicker v-model:open="catalogOpen" :owned-ids="ownedCatalogIds" @imported="load" />
   </section>
 </template>
 
@@ -92,8 +96,11 @@ import { isShown, typeIds } from '../filters';
 import { CATEGORY, categoryLabel } from '../labels';
 import MapPicker from '../components/MapPicker.vue';
 import TypeFilters from '../components/TypeFilters.vue';
+import CatalogPicker from '../components/CatalogPicker.vue';
 
 const places = ref([]);
+const catalogOpen = ref(false);
+const ownedCatalogIds = computed(() => places.value.map((x) => x.catalogId).filter(Boolean));
 const query = ref('');
 const categoryOptions = Object.entries(CATEGORY).map(([id, label]) => ({ id, label }));
 const categories = ref(typeIds(categoryOptions));

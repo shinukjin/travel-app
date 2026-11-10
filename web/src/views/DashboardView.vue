@@ -3,7 +3,7 @@
     <div class="page-head">
       <div>
         <p class="crumb">개요</p>
-        <h2>대시보드</h2>
+        <h2>내 여행 홈</h2>
         <p class="lead">여행 콘텐츠를 등록하면 앱 일정·지도·티켓·회화·준비물에 바로 반영됩니다.</p>
       </div>
       <RouterLink class="btn" to="/trips/new">새 여행 계획</RouterLink>

@@ -60,6 +60,10 @@
           <input v-model="placeQuery" class="search" placeholder="장소 검색" />
           <TypeFilters v-model="placeCats" :options="categoryOptions" />
         </div>
+        <div class="catalog-cta">
+          <button type="button" class="ghost sm" @click="catalogOpen = true">추천 관광지에서 찾기</button>
+          <span class="muted">{{ countryLabels(trip.country) }}의 좌표 등록된 관광지를 검색해 담아요</span>
+        </div>
         <form class="add-place" @submit.prevent="createPlace">
           <strong>새 장소 바로 등록</strong>
           <input v-model="placeForm.name" required placeholder="이름" />
@@ -310,6 +314,7 @@
         <button type="button" @click="mapOpen = false">이 좌표 사용</button>
       </footer>
     </aside>
+    <CatalogPicker v-model:open="catalogOpen" :default-country="trip.country" :owned-ids="ownedCatalogIds" @imported="reloadPlaces" />
   </section>
   <p v-else class="empty">여행 계획을 불러오는 중입니다.</p>
 </template>
@@ -324,6 +329,7 @@ import { isShown, typeIds } from '../filters';
 import MapPicker from '../components/MapPicker.vue';
 import CountrySelect from '../components/CountrySelect.vue';
 import TypeFilters from '../components/TypeFilters.vue';
+import CatalogPicker from '../components/CatalogPicker.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -341,6 +347,12 @@ const openMeta = ref(false);
 const voucherOpen = ref(false);
 const phraseOpen = ref(false);
 const mapOpen = ref(false);
+const catalogOpen = ref(false);
+const ownedCatalogIds = computed(() => places.value.map((x) => x.catalogId).filter(Boolean));
+
+async function reloadPlaces() {
+  places.value = await api.places.list();
+}
 const meta = reactive({ title: '', destination: '', country: 'ES', startDate: '', endDate: '' });
 const placeForm = reactive({ name: '', category: 'SIGHT', address: '', lat: null, lng: null });
 const voucherForm = reactive({ title: '', type: 'FLIGHT', body: '' });
