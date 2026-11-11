@@ -73,9 +73,6 @@
       "name": "Honeymoon Guide Preview"
     },
     "extra": {
-      "googleMapsApiKey": "AIzaSyBZEGAcwr9dLC8rgAvC4s6XFGYt_WHqYa0",
-      "supabaseUrl": "https://brolqzfhklltzhgmuwxn.supabase.co",
-      "supabaseAnonKey": "sb_publishable_2qXo0jBll5loV5FTV01ZPA_I-B0ZF59",
       "eas": {
         "projectId": "15b6fd23-6df6-4760-b98f-3cfa38c10cfc"
       }
