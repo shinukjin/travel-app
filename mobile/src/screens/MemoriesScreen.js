@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, ImageBackground, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '../Text';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Video, ResizeMode } from 'expo-av';
+import { HighlightVideo } from '../components/HighlightVideo';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useFocusEffect } from '@react-navigation/native';
@@ -142,10 +142,6 @@ export default function MemoriesScreen({ embed }) {
               {tripMeta}
             </Text>
           </View>
-          <Pressable style={styles.play} onPress={makeHighlight} disabled={busy} accessibilityRole="button" accessibilityLabel="하이라이트 영상 만들기">
-            {busy ? <ActivityIndicator size="small" color={colors.navy} /> : <Icon name="play" size={14} color={colors.navy} />}
-            <Text style={styles.playText}>{busy ? '만드는 중…' : '하이라이트'}</Text>
-          </Pressable>
         </ImageBackground>
       ) : (
         <View style={styles.emptyCard}>
@@ -168,7 +164,7 @@ export default function MemoriesScreen({ embed }) {
         </Pressable>
       </View>
 
-      {videoUri ? <Video source={{ uri: videoUri }} style={styles.video} useNativeControls resizeMode={ResizeMode.CONTAIN} /> : null}
+      {videoUri ? <HighlightVideo key={videoUri} uri={videoUri} style={styles.video} /> : null}
 
       {groups.map(([day, entries]) => (
         <View key={day} style={styles.group}>
