@@ -1,4 +1,5 @@
-export const PEEK_BODY = 76;
+// 접힌 상태에서도 제목·요약이 탭바에 붙지 않고 읽히도록 여유를 둔다
+export const PEEK_BODY = 104;
 export const TAB_CLEARANCE = 72;
 
 export function computeSnaps(frame, bottomInset = 0) {

@@ -22,7 +22,10 @@ function fitMarkers(map, markers, maps, center, inset = 0) {
   if (!markers.length && center) {
     map.setCenter({ lat: center.lat, lng: center.lng });
     map.setZoom(14);
-    if (inset) map.panBy(0, inset / 2);
+    // 지도가 처음 만들어진 직후에는 크기가 아직 없어 panBy 가 먹히지 않으므로, 그려진 뒤(idle)에 올린다
+    // (같은 지도에서 여러 번 불려도 한 번만 올리도록 이전 대기는 지운다)
+    if (map.__panIdle) maps.event.removeListener(map.__panIdle);
+    map.__panIdle = inset ? maps.event.addListenerOnce(map, 'idle', () => map.panBy(0, inset / 2)) : null;
     return;
   }
   // 점이 하나뿐이면 fitBounds 가 여백을 무시하므로, 직접 가운데·확대를 잡고 패널만큼 올린다
@@ -47,13 +50,15 @@ export default function GoogleMap({
   fitKey,
   onRecenterRequest,
   onScheduleRequest,
+  onSearchHere,
   onMarkerPress,
   selectedId,
   center,
   compact,
   me,
   focus,
-  inset = 0
+  inset = 0,
+  controlsTop = 16
 }) {
   const meHandles = useRef([]);
   const [atMe, setAtMe] = useState(false);
@@ -205,6 +210,18 @@ export default function GoogleMap({
     if (focus.inset) map.panBy(0, focus.inset / 2);
   }, [focus?.nonce]);
 
+  // 지금 보이는 지도(바텀시트에 가리지 않은 부분)의 가운데 좌표로 주변 검색을 요청한다
+  const searchHere = () => {
+    const map = mapRef.current;
+    const bounds = map?.getBounds();
+    if (!map || !bounds) return;
+    const ne = bounds.getNorthEast();
+    const sw = bounds.getSouthWest();
+    const h = containerRef.current?.offsetHeight || 640;
+    const visible = Math.max((h - inset) / h, 0.25);
+    onSearchHere?.({ lat: ne.lat() - ((ne.lat() - sw.lat()) * visible) / 2, lng: map.getCenter().lng() });
+  };
+
   const goMe = () => {
     const map = mapRef.current;
     if (!map || !me) return;
@@ -228,7 +245,7 @@ export default function GoogleMap({
   return (
     <View style={[styles.host, compact && styles.hostCompact]}>
       <View ref={containerRef} style={styles.map} accessibilityRole="image" accessibilityLabel="Google 지도" />
-      <View style={styles.zoom} pointerEvents="box-none">
+      <View style={[styles.zoom, { top: controlsTop }]} pointerEvents="box-none">
         {me ? (
           <Pressable
             style={({ pressed }) => [styles.zoomBtn, atMe && styles.zoomOn, pressed && styles.zoomPressed]}
@@ -243,14 +260,15 @@ export default function GoogleMap({
           style={({ pressed }) => [styles.zoomBtn, pressed && styles.zoomPressed]}
           onPress={() => {
             setAtMe(false);
-            // 일정 화면에서는 현재 시각의 일정 장소로, 그 외에는 전체 마커가 보이게
-            if (onScheduleRequest) onScheduleRequest();
+            // 주변 탐색: 보고 있는 지역 검색 / 일정 화면: 현재 시각의 일정 장소 / 그 외: 전체 마커가 보이게
+            if (onSearchHere) searchHere();
+            else if (onScheduleRequest) onScheduleRequest();
             else fit();
           }}
           accessibilityRole="button"
-          accessibilityLabel="일정 위치로"
+          accessibilityLabel={onSearchHere ? '이 지역 주변 검색' : '일정 위치로'}
         >
-          <Icon name="calendar-outline" size={18} color={colors.ink} />
+          <Icon name={onSearchHere ? 'locate' : 'calendar-outline'} size={18} color={colors.ink} />
         </Pressable>
       </View>
     </View>

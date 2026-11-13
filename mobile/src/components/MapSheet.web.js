@@ -13,13 +13,17 @@ export default function MapSheet({
   dayIndex,
   onPrev,
   onNext,
-  markers,
+  markers = [],
   items,
   mode,
   onToggle,
   onSnapMode,
   frameHeight,
-  onOpenPlace
+  onOpenPlace,
+  title,
+  peekText,
+  hideNav,
+  children
 }) {
   const insets = useSafeAreaInsets();
   const frame = frameHeight || 640;
@@ -73,6 +77,7 @@ export default function MapSheet({
 
   const showList = sheetHeight > snaps.peek + 28;
   const nextStop = markers[0];
+  const peekLine = peekText !== undefined ? peekText : nextStop ? `${formatTime(nextStop.startTime)} · ${nextStop.place?.name}` : null;
 
   return (
     <Animated.View style={[styles.sheet, { height: heightAnim }]}>
@@ -84,32 +89,36 @@ export default function MapSheet({
         <View style={styles.head}>
           <View style={{ flex: 1 }}>
             <Text style={styles.title} numberOfLines={1}>
-              {day ? `${day.dayIndex}일차  ${formatDay(day.date)}` : '일정 없음'}
+              {title ?? (day ? `${day.dayIndex}일차  ${formatDay(day.date)}` : '일정 없음')}
             </Text>
-            {!showList && nextStop ? (
+            {!showList && peekLine ? (
               <Text style={styles.peekMeta} numberOfLines={1}>
-                {formatTime(nextStop.startTime)} · {nextStop.place?.name}
+                {peekLine}
               </Text>
             ) : null}
           </View>
           <Pressable onPress={onToggle} style={styles.iconBtn} accessibilityRole="button" accessibilityLabel={showList ? '목록 접기' : '목록 열기'}>
             <Icon name={showList ? 'chevron-down' : 'chevron-up'} size={16} color={colors.ink} />
           </Pressable>
-          <Pressable disabled={dayIndex <= 0} onPress={onPrev} style={[styles.iconBtn, dayIndex <= 0 && styles.disabled]}>
-            <Icon name="chevron-back" size={16} color={colors.ink} />
-          </Pressable>
-          <Pressable
-            disabled={dayIndex >= days.length - 1}
-            onPress={onNext}
-            style={[styles.iconBtn, dayIndex >= days.length - 1 && styles.disabled]}
-          >
-            <Icon name="chevron-forward" size={16} color={colors.ink} />
-          </Pressable>
+          {hideNav ? null : (
+            <>
+              <Pressable disabled={dayIndex <= 0} onPress={onPrev} style={[styles.iconBtn, dayIndex <= 0 && styles.disabled]}>
+                <Icon name="chevron-back" size={16} color={colors.ink} />
+              </Pressable>
+              <Pressable
+                disabled={dayIndex >= days.length - 1}
+                onPress={onNext}
+                style={[styles.iconBtn, dayIndex >= days.length - 1 && styles.disabled]}
+              >
+                <Icon name="chevron-forward" size={16} color={colors.ink} />
+              </Pressable>
+            </>
+          )}
         </View>
       </View>
       {showList ? (
         <ScrollView style={styles.list} contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
-          <MapStopList markers={markers} items={items} onOpenPlace={onOpenPlace} />
+          {children ?? <MapStopList markers={markers} items={items} onOpenPlace={onOpenPlace} />}
         </ScrollView>
       ) : null}
     </Animated.View>
@@ -126,7 +135,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: space.lg,
-    paddingBottom: space.sm,
+    paddingBottom: space.md,
     ...shadow.float
   },
   dragZone: { cursor: 'grab', touchAction: 'none' },
