@@ -24,6 +24,7 @@ export default function MapSheet({
   onPrev,
   onNext,
   markers,
+  items,
   mode,
   onSnapMode,
   onToggle,
@@ -108,7 +109,7 @@ export default function MapSheet({
       </GestureDetector>
       {showList ? (
         <ScrollView style={styles.list} contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
-          <MapStopList markers={markers} onOpenPlace={onOpenPlace} />
+          <MapStopList markers={markers} items={items} onOpenPlace={onOpenPlace} />
         </ScrollView>
       ) : null}
     </Animated.View>

@@ -22,23 +22,7 @@
 
 ## 로컬 실행 (Windows)
 
-PowerShell에서는 `&&` 체인이 깨질 수 있으므로 **작업 디렉터리를 각 폴더로 바꾼 뒤** 명령을 실행하세요.
-
-```powershell
-# 사용자 웹 (5173)
-cd web
-npm install
-npm run dev
-
-# 운영 콘솔 (별 터미널, 5174)
-cd admin
-npm install
-npm run dev
-
-# mobile 웹 미리보기 (별 터미널)
-cd mobile
-npx expo start --web --port 8081
-```
+PowerShell에서는 `&&` 체인이 깨질 수 있으므로 **작업 디렉터리를 각 폴더로 바꾼 뒤** 명령을 실행하세요. 포트: web 5173, admin 5174, mobile 웹 미리보기는 `npx expo start --web --port 8081`.
 
 - 데이터는 Supabase. **로그인 필수** (앱·사용자 웹·운영 콘솔 모두 이메일 로그인), 접근 제어는 DB RLS(`owner_id = auth.uid()`)
 - 최초 설정·Vercel 배포·데이터 이전·운영자 설정: `docs/배포-가이드.md`
@@ -54,21 +38,6 @@ npx expo start --web --port 8081
 - 모바일 키는 `mobile/app.config.js`가 루트 `.env`를 읽어 `extra`로 주입 (app.json 과 병합)
 - Supabase는 **anon 키만** 사용. `service_role` 키는 어디에도 넣지 말 것
 - Claude Code `permissions`에서 `.env` 읽기 거부됨 — 키 내용을 에이전트에 노출하지 말 것
-
-## 모바일 앱 구조 (요약)
-
-- 진입: `mobile/App.js` — 하단 탭(홈·여행·**지도**·기록·도구), 스택에 `장소` 상세
-- **지도 탭**: 하단 메인 탭바 숨김, `MapHubMenuBadge` 뱃지 → 메뉴(일정 지도 / 주변 탐색 + 다른 탭 이동)
-- 지도: Google Maps (웹 `GoogleMap.web.js`, 네이티브 `MapScreen.native.js` + `PROVIDER_GOOGLE`)
-- 일정 패널: `MapSheet.*`, 스냅 `mapSheetSnap.js`, 드래그로 peek/half/full
-- 레이아웃: `mobile/src/layout.js` (`LayoutProvider`) — Fold·넓은 화면 대응
-- 데이터: `GuideProvider`, `loadGuideCache` / 동기화 — **시드 샘플 데이터 제거됨**, 사용자 웹 또는 앱에서 직접 입력
-
-주요 경로:
-
-- `mobile/src/screens/*HubScreen.js` — 탭별 허브
-- `mobile/src/components/MapHubMenuBadge.js`, `MapSheet.*.js`
-- `mobile/src/mapsConfig.js`, `web/src/mapsKey.js`
 
 ## 백엔드·데이터
 
@@ -91,12 +60,7 @@ npx expo start --web --port 8081
 
 ## 테스트·검증 체크리스트 (기능 변경 시)
 
-- [ ] 백엔드 8080 기동 후 사용자 웹 5173 CRUD / 운영 콘솔 5174 로그인(관리자만)
+- [ ] 사용자 웹 5173 CRUD / 운영 콘솔 5174 로그인(관리자만)
 - [ ] Mobile 웹 8081 — 홈·여행·지도 메뉴 뱃지·일정 패널·지도 마커
 - [ ] Google API: Maps JavaScript, Geocoding, Places, Maps SDK for Android 활성 여부
 - [ ] `app.config.js` / prebuild 변경 후 Expo 재시작 또는 `run:android`
-
-## 참고 링크
-
-- 개발계획: `docs/개발계획서.md`
-- Claude Code 설정: https://code.claude.com/docs/en/settings

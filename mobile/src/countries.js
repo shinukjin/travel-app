@@ -96,7 +96,7 @@ const COVERS = [
 ];
 
 export function countryCover(code) {
-  const cc = firstCountry(code) || 'ES';
+  const cc = firstCountry(code) || 'KR';
   let hash = 0;
   for (let i = 0; i < cc.length; i += 1) hash += cc.charCodeAt(i) * (i + 7);
   return COVERS[hash % COVERS.length];

@@ -5,9 +5,11 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { api } from '../api';
 import { navigatePlaceInfo } from '../placeInfo';
 import { useGuide } from '../GuideContext';
-import { categoryMeta, colors, formatDay, formatTime, formatWeek, radius, space } from '../theme';
+import { categoryMeta, colors, formatDay, formatRange, formatTime, formatWeek, radius, space } from '../theme';
 import PlacePicker from '../components/PlacePicker';
-import { Icon, Screen, TravelLeg, TripPicker } from '../ui';
+import { Icon, Screen, TripLabel } from '../ui';
+import { useToast } from '../Toast';
+import { travelLeg } from '../route';
 
 /* ---------- 시간 입력 도우미 ---------- */
 
@@ -52,11 +54,21 @@ function confirmDelete(title, message, onOk, okLabel = '삭제') {
 let draftSeq = 0;
 const newDraft = (place, startTime) => ({ key: `new-${++draftSeq}`, place, startTime, note: '' });
 
+/** 그날 일정의 첫~마지막 시간 — "09:00 – 18:30" (시간이 없으면 빈 문자열) */
+function timeRange(items) {
+  const times = items.map((i) => formatTime(i.startTime)).filter((t) => /^\d{2}:\d{2}$/.test(t));
+  if (!times.length) return '';
+  const first = times[0];
+  const last = times[times.length - 1];
+  return first === last ? first : `${first} – ${last}`;
+}
+
 /* ---------- 일정 화면 ---------- */
 
 export default function ScheduleScreen({ embed }) {
+  const toast = useToast();
   const navigation = useNavigation();
-  const { trip, trips, tripId, days, loading, selectTrip, refresh } = useGuide();
+  const { trip, tripId, days, loading, refresh } = useGuide();
   const [dayId, setDayId] = useState(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState([]);
@@ -211,6 +223,7 @@ export default function ScheduleScreen({ embed }) {
       setPendingDel(new Map());
       await refresh();
       setEditing(false);
+      toast.show('일정을 저장했어요');
     } catch (e) {
       Alert.alert('저장 실패', e.message || '네트워크 연결을 확인해 주세요.');
     } finally {
@@ -229,7 +242,7 @@ export default function ScheduleScreen({ embed }) {
   if (!trip || !days.length) {
     return (
       <Screen scroll inHub={embed} contentStyle={styles.body}>
-        {trips.length > 1 ? <TripPicker trips={trips} tripId={tripId} onSelect={selectTrip} /> : null}
+        {trip ? <TripLabel trip={trip} /> : null}
         <View style={styles.emptyCard}>
           <Icon name="calendar-outline" size={28} color={colors.accent} />
           <Text style={styles.emptyTitle}>{trip ? '일정 칸이 아직 없어요' : '첫 여행을 추가해 주세요'}</Text>
@@ -243,35 +256,45 @@ export default function ScheduleScreen({ embed }) {
 
   return (
     <Screen scroll inHub={embed} contentStyle={styles.body}>
-      {trips.length > 1 ? <TripPicker trips={trips} tripId={tripId} onSelect={selectTrip} /> : null}
+      {/* 1) 달력 스트립 — 요일 · 날짜 · 일정 있는 날 점. 한 칸이 48 이상이라 손가락으로 누르기 편하다 */}
+      <View style={styles.stripWrap}>
+        <Text style={styles.tripLine} numberOfLines={1}>
+          {[trip.title, formatRange(trip.startDate, trip.endDate)].filter(Boolean).join(' · ')}
+        </Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.strip}>
+          {days.map((d) => {
+            const on = d.id === day.id;
+            const isToday = d.date === today;
+            const count = (d.items || []).length;
+            return (
+              <Pressable
+                key={d.id}
+                onPress={() => switchDay(d.id)}
+                style={[styles.cal, on && styles.calOn, !on && isToday && styles.calToday]}
+                accessibilityRole="button"
+                accessibilityLabel={`${d.dayIndex}일차 ${formatDay(d.date)}${isToday ? ', 오늘' : ''}${count ? `, 일정 ${count}곳` : ', 일정 없음'}`}
+                accessibilityState={{ selected: on }}
+              >
+                <Text style={[styles.calWeek, on && styles.calWeekOn]}>{formatWeek(d.date)}</Text>
+                <Text style={[styles.calDate, on && styles.calDateOn]}>{Number(d.date.split('-')[2])}</Text>
+                <View style={[styles.calDot, count ? (on ? styles.calDotHasOn : styles.calDotHas) : null]} />
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={styles.dayRow}>
-        {days.map((d) => {
-          const on = d.id === day.id;
-          const [, m, dd] = d.date.split('-');
-          return (
-            <Pressable
-              key={d.id}
-              onPress={() => switchDay(d.id)}
-              style={[styles.dayChip, on && styles.dayChipOn]}
-              accessibilityRole="button"
-              accessibilityState={{ selected: on }}
-            >
-              <Text style={[styles.dayIdx, on && styles.dayIdxOn]}>{d.dayIndex}일차</Text>
-              <Text style={[styles.dayDate, on && styles.dayDateOn]}>
-                {Number(m)}.{Number(dd)}
-              </Text>
-              <Text style={[styles.dayWeek, on && styles.dayIdxOn]}>{formatWeek(d.date)}</Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-
-      <View style={styles.dayHead}>
+      {/* 2) 선택한 날 요약 + 편집 (편집 중에는 취소 / 저장) */}
+      <View style={styles.sum}>
         <View style={styles.flex1}>
-          <Text style={styles.dayTitle}>{formatDay(day.date)}</Text>
-          <Text style={styles.daySub}>
-            {editing ? `${draft.length}곳 · 편집 중` : items.length ? `${items.length}곳` : '아직 비어 있어요'}
+          <Text style={styles.sumTitle}>{formatDay(day.date)}</Text>
+          <Text style={styles.sumSub}>
+            {`${day.dayIndex}일차`}
+            {editing
+              ? ` · ${draft.length}곳 · 편집 중`
+              : items.length
+                ? ` · ${items.length}곳${timeRange(items) ? ` · ${timeRange(items)}` : ''}`
+                : ' · 아직 비어 있어요'}
           </Text>
         </View>
         {editing ? (
@@ -284,7 +307,7 @@ export default function ScheduleScreen({ embed }) {
             </Pressable>
           </View>
         ) : (
-          <Pressable onPress={startEdit} style={styles.editBtn} accessibilityRole="button" accessibilityLabel="일정 편집">
+          <Pressable onPress={startEdit} style={styles.editBtn} hitSlop={{ top: 4, bottom: 4 }} accessibilityRole="button" accessibilityLabel="일정 편집">
             <Icon name="create-outline" size={16} color={colors.ink} />
             <Text style={styles.editBtnText}>편집</Text>
           </Pressable>
@@ -385,51 +408,67 @@ export default function ScheduleScreen({ embed }) {
           </Pressable>
         </View>
       ) : items.length ? (
-        <View>
+        // 시간 · 점 · 카드 — 카드는 터치하기 편한 크기(64 이상)와 읽기 편한 글씨(16/13)로, 이동 시간은 줄 사이 칩으로
+        <View style={styles.tl}>
           {items.map((item, index) => {
             const meta = categoryMeta[item.place?.category] || categoryMeta.SIGHT;
             const canRoute = !!item.place?.name;
             const upcoming = nextStop?.id === item.id;
+            const first = index === 0;
             const last = index === items.length - 1;
+            const leg = index > 0 ? travelLeg(items[index - 1].place, item.place) : null;
+            const sub = item.note || item.place?.address;
             return (
-              <View key={item.id} style={styles.stopRow}>
-                <Text style={[styles.time, upcoming && styles.timeNext]}>{formatTime(item.startTime)}</Text>
-                <View style={styles.rail}>
-                  <View style={[styles.dot, { backgroundColor: meta.color }, upcoming && styles.dotNext]} />
-                  {!last ? <View style={styles.line} /> : null}
-                </View>
-                <View style={[styles.stopCol, !last && styles.stopColGap]}>
-                  {index > 0 ? <TravelLeg from={items[index - 1].place} to={item.place} /> : null}
+              <View key={item.id}>
+                {leg ? (
+                  <Pressable onPress={() => Linking.openURL(leg.url)} style={styles.tlLeg} accessibilityRole="button" accessibilityLabel={`${leg.label} 길찾기`}>
+                    <View style={styles.tlTimeCol} />
+                    <View style={styles.tlRail}>
+                      <View style={styles.tlLine} />
+                    </View>
+                    <View style={styles.tlLegPill}>
+                      <Icon name={leg.walk ? 'walk' : 'car'} size={13} color={colors.muted} />
+                      <Text style={styles.tlLegText}>{leg.label}</Text>
+                    </View>
+                  </Pressable>
+                ) : null}
+                <View style={styles.tlRow}>
+                  <Text style={[styles.tlTime, upcoming && styles.tlTimeNext]} numberOfLines={1}>
+                    {formatTime(item.startTime)}
+                  </Text>
+                  <View style={styles.tlRail}>
+                    <View style={[styles.tlLine, first && styles.tlLineFirst, last && styles.tlLineLast]} />
+                    <View style={[styles.tlDot, { backgroundColor: meta.color }, upcoming && styles.tlDotNext]} />
+                  </View>
                   <Pressable
-                    style={({ pressed }) => [styles.stop, upcoming && styles.stopNext, pressed && styles.pressed]}
+                    style={({ pressed }) => [styles.tlCard, upcoming && styles.tlCardNext, pressed && styles.pressed]}
                     onPress={() => navigatePlaceInfo(navigation, item.place, item.note)}
                     accessibilityRole="button"
+                    accessibilityLabel={`${upcoming ? '다음 장소 ' : ''}${item.place?.name}, ${formatTime(item.startTime)}`}
                   >
-                    <View style={styles.stopBody}>
-                      <View style={styles.stopTags}>
-                        <View style={[styles.tag, { backgroundColor: meta.soft }]}>
-                          <Icon name={meta.icon} size={12} color={meta.color} />
-                          <Text style={[styles.tagText, { color: meta.color }]}>{meta.label}</Text>
-                        </View>
+                    <View style={[styles.tlIcon, { backgroundColor: meta.soft }]}>
+                      <Icon name={meta.icon} size={18} color={meta.color} />
+                    </View>
+                    <View style={styles.tlBody}>
+                      <View style={styles.tlNameRow}>
+                        <Text style={styles.tlName} numberOfLines={1}>
+                          {item.place?.name}
+                        </Text>
                         {upcoming ? (
-                          <View style={styles.nextTag}>
-                            <Text style={styles.nextTagText}>{day.date === today ? '다음' : '첫 장소'}</Text>
+                          <View style={styles.tlNextTag}>
+                            <Text style={styles.tlNextTagText}>{day.date === today ? '다음' : '첫 일정'}</Text>
                           </View>
                         ) : null}
                       </View>
-                      <Text style={styles.stopTitle} numberOfLines={2}>
-                        {item.place?.name}
-                      </Text>
-                      {item.place?.address ? (
-                        <Text style={styles.stopSub} numberOfLines={1}>
-                          {item.place.address}
+                      {sub ? (
+                        <Text style={styles.tlSub} numberOfLines={1}>
+                          {sub}
                         </Text>
                       ) : null}
-                      {item.note ? <Text style={styles.stopNote}>{item.note}</Text> : null}
                     </View>
                     {canRoute ? (
                       <Pressable
-                        style={styles.go}
+                        style={styles.tlGo}
                         onPress={(e) => {
                           e?.stopPropagation?.();
                           openDirections(item.place);
@@ -437,7 +476,7 @@ export default function ScheduleScreen({ embed }) {
                         accessibilityRole="button"
                         accessibilityLabel={`${item.place.name} 길찾기`}
                       >
-                        <Icon name="navigate" size={16} color={colors.accent} />
+                        <Icon name="navigate" size={18} color={colors.accent} />
                       </Pressable>
                     ) : null}
                   </Pressable>
@@ -445,6 +484,21 @@ export default function ScheduleScreen({ embed }) {
               </View>
             );
           })}
+
+          {/* 주된 행동 하나 — 편집 모드를 거치지 않고 바로 장소 추가 */}
+          <Pressable
+            onPress={() => {
+              startEdit();
+              setAddedCount(0);
+              setPickerOpen(true);
+            }}
+            style={({ pressed }) => [styles.tlAdd, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel="이 날에 장소 추가"
+          >
+            <Icon name="add" size={20} color={colors.accent} />
+            <Text style={styles.tlAddText}>장소 추가</Text>
+          </Pressable>
         </View>
       ) : (
         <View style={styles.emptyCard}>
@@ -488,71 +542,64 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.92 },
   disabled: { opacity: 0.4 },
   rowEnd: { flexDirection: 'row', gap: space.sm, alignItems: 'center', justifyContent: 'flex-end' },
-  chipScroll: { flexGrow: 0 },
-  dayRow: { gap: space.sm, paddingRight: space.lg },
-  dayChip: {
-    width: 64,
-    paddingVertical: 10,
-    alignItems: 'center',
-    gap: 2,
-    borderRadius: radius.card,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.line
-  },
-  dayChipOn: { backgroundColor: colors.navy, borderColor: colors.navy },
-  dayIdx: { fontSize: 11, fontWeight: '600', color: colors.muted },
-  dayIdxOn: { color: 'rgba(255,255,255,0.7)' },
-  dayDate: { fontSize: 16, fontWeight: '800', color: colors.ink },
-  dayDateOn: { color: '#fff' },
-  dayWeek: { fontSize: 11, fontWeight: '600', color: colors.faint },
-  dayHead: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-  dayTitle: { fontSize: 22, fontWeight: '800', color: colors.ink, letterSpacing: -0.4 },
-  daySub: { fontSize: 13, color: colors.muted, marginTop: 2 },
-  editBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: space.md,
-    height: 38,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted
-  },
-  editBtnText: { fontSize: 13, fontWeight: '700', color: colors.ink },
-  btnGhost: { paddingHorizontal: space.lg, height: 40, borderRadius: radius.control, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
+  // ── 달력 스트립 (ui-ux-pro-max: 터치 영역 ≥44, 8px 간격, 글씨 ≥12, 색만으로 구분하지 않기) ──
+  stripWrap: { gap: space.sm },
+  tripLine: { fontSize: 13, fontWeight: '600', color: colors.muted },
+  strip: { gap: space.sm, paddingRight: space.lg },
+  cal: { width: 52, height: 72, borderRadius: radius.card, alignItems: 'center', justifyContent: 'center', gap: 2, backgroundColor: colors.card, borderWidth: 1.5, borderColor: colors.line },
+  // 선택한 날 — 연한 파랑 바탕 + 파란 테두리 (꽉 찬 진한 색 대신)
+  calOn: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
+  calToday: { borderColor: colors.faint },
+  calWeek: { fontSize: 12, fontWeight: '700', color: colors.muted },
+  calWeekOn: { color: colors.accentDark },
+  calDate: { fontSize: 20, lineHeight: 24, fontWeight: '800', color: colors.ink, fontVariant: ['tabular-nums'] },
+  calDateOn: { color: colors.accentDark },
+  // 일정이 있는 날은 점 — 모양(점 유무)으로 구분해 색에만 기대지 않는다
+  calDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'transparent' },
+  calDotHas: { backgroundColor: colors.accent },
+  calDotHasOn: { backgroundColor: colors.accent },
+
+  // ── 선택한 날 요약 + 편집 ──
+  sum: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  sumTitle: { fontSize: 20, lineHeight: 26, fontWeight: '800', color: colors.ink, letterSpacing: -0.3 },
+  sumSub: { fontSize: 13, color: colors.muted, marginTop: 2 },
+  editBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.lg, height: 40, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted },
+  editBtnText: { fontSize: 14, fontWeight: '700', color: colors.ink },
+  btnGhost: { paddingHorizontal: space.lg, height: 44, borderRadius: radius.control, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
   btnGhostText: { fontSize: 14, fontWeight: '700', color: colors.ink },
-  btnPrimary: { paddingHorizontal: space.lg, height: 40, borderRadius: radius.control, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
+  btnPrimary: { paddingHorizontal: space.lg, height: 44, borderRadius: radius.control, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
   btnPrimaryText: { fontSize: 14, fontWeight: '700', color: '#fff' },
 
-  stopRow: { flexDirection: 'row', alignItems: 'stretch' },
-  time: { width: 46, fontSize: 14, fontWeight: '700', color: colors.muted, paddingTop: 14, fontVariant: ['tabular-nums'] },
-  timeNext: { color: colors.accent },
-  rail: { width: 24, alignItems: 'center' },
-  dot: { width: 12, height: 12, borderRadius: 6, marginTop: 18, borderWidth: 2, borderColor: colors.bg },
-  dotNext: { width: 16, height: 16, borderRadius: 8, marginTop: 16 },
-  line: { flex: 1, width: 2, backgroundColor: colors.line, marginTop: 2 },
-  stopCol: { flex: 1, gap: space.sm },
-  stopColGap: { paddingBottom: space.md },
-  stop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.md,
-    padding: space.lg,
-    borderRadius: radius.card,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.line
-  },
-  stopNext: { borderColor: colors.accent, borderWidth: 1.5 },
-  stopBody: { flex: 1, gap: 4 },
-  stopTags: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  tag: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill },
-  tagText: { fontSize: 11, fontWeight: '700' },
-  nextTag: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill, backgroundColor: colors.tram },
-  nextTagText: { fontSize: 11, fontWeight: '800', color: colors.navy },
-  stopTitle: { fontSize: 17, fontWeight: '700', color: colors.ink, letterSpacing: -0.2 },
-  stopSub: { fontSize: 12, color: colors.muted },
-  stopNote: { fontSize: 14, color: colors.ink, marginTop: 2, lineHeight: 20 },
+  // ── 타임라인 (시간 · 점 · 카드) ──
+  tl: { gap: 0 },
+  tlRow: { flexDirection: 'row', alignItems: 'stretch', gap: space.sm, paddingVertical: 4 },
+  tlTime: { width: 48, paddingTop: 22, fontSize: 14, fontWeight: '800', color: colors.ink, fontVariant: ['tabular-nums'] },
+  tlTimeNext: { color: colors.accentDark },
+  tlRail: { width: 20, alignItems: 'center' },
+  tlLine: { position: 'absolute', top: 0, bottom: 0, width: 2, backgroundColor: colors.line },
+  tlLineFirst: { top: 28 },
+  tlLineLast: { bottom: '60%' },
+  tlDot: { width: 12, height: 12, borderRadius: 6, marginTop: 24, borderWidth: 2, borderColor: colors.bg },
+  tlDotNext: { width: 16, height: 16, borderRadius: 8, marginTop: 22, borderWidth: 3 },
+  tlCard: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 64, padding: 10, paddingRight: 6, borderRadius: radius.card, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
+  tlCardNext: { backgroundColor: colors.tramSoft, borderColor: colors.tram, borderWidth: 1.5 },
+  tlIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  tlBody: { flex: 1, gap: 2 },
+  tlNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  tlName: { flexShrink: 1, fontSize: 16, fontWeight: '700', color: colors.ink, letterSpacing: -0.2 },
+  tlNextTag: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill, backgroundColor: colors.tram },
+  tlNextTagText: { fontSize: 12, fontWeight: '800', color: colors.navy },
+  tlSub: { fontSize: 13, color: colors.muted },
+  // 길찾기 — 눈에 보이는 크기가 곧 터치 영역(44)
+  tlGo: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  // 이동 시간 칩 — 줄 사이, 글씨 12
+  tlLeg: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 32 },
+  tlTimeCol: { width: 48 },
+  tlLegPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted },
+  tlLegText: { fontSize: 12, fontWeight: '700', color: colors.muted },
+  // 장소 추가 — 이 화면의 주된 행동
+  tlAdd: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 52, marginTop: space.md, borderRadius: radius.card, borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.accent, backgroundColor: colors.accentSoft },
+  tlAddText: { fontSize: 15, fontWeight: '800', color: colors.accent },
   go: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
 
   editList: { gap: space.md },

@@ -230,6 +230,20 @@ export function TripPicker({ trips, tripId, onSelect }) {
   );
 }
 
+/** 지금 보고 있는 여행 표시 — 여행 선택은 홈에서만 한다 */
+export function TripLabel({ trip }) {
+  if (!trip) return null;
+  const range = formatRange(trip.startDate, trip.endDate);
+  return (
+    <View style={styles.tripLabel}>
+      <Icon name="airplane-outline" size={14} color={colors.accent} />
+      <Text style={styles.tripLabelText} numberOfLines={1}>
+        {[trip.title, range].filter(Boolean).join(' · ')}
+      </Text>
+    </View>
+  );
+}
+
 export function DayStrip({ days, selectedId, onSelect }) {
   if (!days?.length) return null;
   return (
@@ -273,7 +287,7 @@ export function IconCats({ options, value, onChange }) {
             accessibilityRole="button"
             accessibilityLabel={option.label}
           >
-            <Icon name={option.icon} size={15} color={on ? 'white' : colors.ink} />
+            <Icon name={option.icon} size={15} color={on ? colors.accentDark : colors.ink} />
             {option.label ? (
               <Text style={[styles.iconCatLabel, on && styles.iconCatLabelOn]} numberOfLines={1}>
                 {option.label}
@@ -390,9 +404,11 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     maxWidth: 150
   },
-  tripChipOn: { backgroundColor: colors.navy, borderColor: colors.navy },
+  tripLabel: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', maxWidth: '100%', paddingHorizontal: space.md, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.accentSoft },
+  tripLabelText: { flexShrink: 1, fontSize: 12, fontWeight: '700', color: colors.accentDark },
+  tripChipOn: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
   tripChipText: { fontSize: 13, fontWeight: '700', color: colors.muted },
-  tripChipTextOn: { color: 'white' },
+  tripChipTextOn: { color: colors.accentDark },
   dayStripWrap: {
     backgroundColor: colors.surfaceMuted,
     borderRadius: radius.card,
@@ -424,9 +440,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.lineHair
   },
-  iconCatOn: { backgroundColor: colors.navy, borderColor: colors.navy },
+  iconCatOn: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
   iconCatLabel: { fontSize: 12, fontWeight: '700', color: colors.muted },
-  iconCatLabelOn: { color: 'white' },
+  iconCatLabelOn: { color: colors.accentDark },
   leg: {
     flexDirection: 'row',
     alignItems: 'center',

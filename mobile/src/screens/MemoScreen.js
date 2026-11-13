@@ -8,7 +8,9 @@ import { useFocusEffect } from '@react-navigation/native';
 import { colors, formatDay, radius, space } from '../theme';
 import { Icon, Screen, shortTitle } from '../ui';
 import { storage } from '../storage';
-import { loadGuideCache, matchTripByDate, syncPendingMemos } from '../sync';
+import { deleteMemo, syncPendingMemos } from '../sync';
+import { useGuide } from '../GuideContext';
+import { useToast } from '../Toast';
 
 /** 로컬 시각 기준 ISO (UTC 변환 없이) */
 function nowIso() {
@@ -40,18 +42,19 @@ function groupByDay(memos) {
 }
 
 export default function MemoScreen({ embed }) {
+  const toast = useToast();
   const [content, setContent] = useState('');
   const [photoUri, setPhotoUri] = useState(null);
   const [withLocation, setWithLocation] = useState(true);
-  const [memos, setMemos] = useState([]);
-  const [trips, setTrips] = useState([]);
+  const [allMemos, setMemos] = useState([]);
+  // 메모는 홈에서 선택한 여행에 저장되고, 목록도 그 여행의 기록만 보여 준다
+  const { trip } = useGuide();
+  const memos = useMemo(() => (trip ? allMemos.filter((m) => m.tripId === trip.id) : allMemos), [allMemos, trip]);
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState('');
   const [focused, setFocused] = useState(false);
 
   const refresh = useCallback(async () => {
-    const cache = await loadGuideCache();
-    setTrips(cache.trips);
     const net = await NetInfo.fetch();
     if (net.isConnected) setMemos(await syncPendingMemos());
     else setMemos(await storage.getMemos());
@@ -67,7 +70,6 @@ export default function MemoScreen({ embed }) {
     }, [refresh])
   );
 
-  const trip = matchTripByDate(trips, nowIso()) || trips[0];
   const pendingCount = memos.filter((m) => m.syncStatus !== 'synced').length;
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -118,11 +120,30 @@ export default function MemoScreen({ embed }) {
       setContent('');
       setPhotoUri(null);
       setFocused(false);
+      toast.show('기록을 저장했어요');
       const net = await NetInfo.fetch();
       if (net.isConnected) setMemos(await syncPendingMemos());
     } finally {
       setSaving(false);
     }
+  }
+
+  function confirmDelete(memo) {
+    Alert.alert('기록 삭제', '이 기록을 삭제할까요? 삭제하면 되돌릴 수 없어요.', [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '삭제',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            setMemos(await deleteMemo(memo));
+            toast.show('기록을 삭제했어요');
+          } catch {
+            Alert.alert('삭제하지 못했어요', '인터넷 연결을 확인하고 다시 시도해 주세요.');
+          }
+        }
+      }
+    ]);
   }
 
   return (
@@ -223,6 +244,10 @@ export default function MemoScreen({ embed }) {
                     <Text style={styles.pendingText}>대기</Text>
                   </View>
                 )}
+                <View style={styles.grow} />
+                <Pressable onPress={() => confirmDelete(memo)} hitSlop={10} accessibilityRole="button" accessibilityLabel="기록 삭제">
+                  <Icon name="trash-outline" size={18} color={colors.faint} />
+                </Pressable>
               </View>
               <Text style={styles.entryBody}>{memo.content}</Text>
               {memo.photoUri ? <Image source={{ uri: memo.photoUri }} style={styles.entryPhoto} /> : null}

@@ -13,16 +13,16 @@
     <form class="create-box" @submit.prevent="save">
       <div class="form-row">
         <label>여행 이름</label>
-        <input v-model="form.title" required placeholder="예: 스페인 신혼여행" />
+        <input v-model="form.title" required placeholder="예: 유럽 신혼여행" />
       </div>
       <div class="form-row">
         <label>국가</label>
         <CountrySelect v-model="form.country" />
-        <p class="muted">스페인·포르투갈처럼 여러 나라를 함께 고를 수 있습니다.</p>
+        <p class="muted">여러 나라를 함께 고를 수 있습니다.</p>
       </div>
       <div class="form-row">
         <label>도시·지역</label>
-        <input v-model="form.destination" placeholder="예: 바르셀로나, 세비야, 리스본" />
+        <input v-model="form.destination" placeholder="예: 도시나 지역 이름 (여러 곳은 쉼표로)" />
         <p class="muted">국가와 별개로, 실제로 머무를 도시나 지역을 적습니다.</p>
       </div>
       <div class="grid two">

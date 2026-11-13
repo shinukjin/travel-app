@@ -10,7 +10,8 @@ import {
 } from './theme';
 
 export const DEFAULT_SHARE_OPTIONS = {
-  vouchers: true,
+  // 예약번호가 들어 있어 기본은 제외 — 보낼 때 직접 켠다
+  vouchers: false,
   phrases: false,
   packing: false,
   mapLinks: true

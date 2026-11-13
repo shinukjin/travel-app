@@ -3,8 +3,8 @@
   --bg: #f7f9fb;
   --card: #ffffff;
   --ink: #10263f;
-  --muted: #5b6b7f;
-  --faint: #93a1b2;
+  --muted: #4d5d71;
+  --faint: #7d8c9f;
   --line: #dce4ec;
   --line-strong: #c3cfdb;
   --sidebar: #ffffff;
@@ -26,11 +26,14 @@
   font-family: Pretendard, "Segoe UI", "Apple SD Gothic Neo", sans-serif;
   color: var(--ink);
   background: var(--bg);
-  line-height: 1.5;
-  font-size: 14px;
+  line-height: 1.55;
+  font-size: 15px;
 }
 
 * { box-sizing: border-box; }
+
+/* 키보드로 움직일 때도 어디에 있는지 보이게 */
+:focus-visible { outline: 3px solid var(--tram); outline-offset: 2px; border-radius: 6px; }
 html, body, #app { min-height: 100%; }
 body { margin: 0; background: var(--bg); }
 a { color: inherit; text-decoration: none; }
@@ -92,27 +95,31 @@ button { cursor: pointer; }
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 10px;
-  border-radius: 8px;
+  min-height: 42px;
+  padding: 9px 12px;
+  border-radius: 10px;
   color: var(--muted);
-  font-size: 13px;
-  border-left: 3px solid transparent;
+  font-size: 14px;
+  font-weight: 600;
+  border-left: 4px solid transparent;
+  transition: background 0.12s, color 0.12s;
 }
 
 .sidebar a svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   flex: none;
   opacity: 0.85;
 }
 
 .sidebar a:hover { background: var(--sidebar-2); color: var(--ink); }
 
+/* 지금 보고 있는 메뉴가 한눈에 보이게: 연한 파랑 바탕 + 왼쪽 굵은 막대 + 굵은 글씨 */
 .sidebar a.router-link-active {
-  background: var(--sidebar-2);
-  color: var(--ink);
-  font-weight: 700;
-  border-left-color: var(--tram);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-weight: 800;
+  border-left-color: var(--accent);
 }
 
 .sidebar a.router-link-active svg { color: var(--accent); opacity: 1; }
@@ -149,10 +156,10 @@ button { cursor: pointer; }
   padding: 0 24px;
 }
 
-.topbar-title { font-weight: 700; font-size: 14px; }
-.topbar-meta { color: var(--muted); font-size: 12px; }
+.topbar-title { font-weight: 800; font-size: 16px; }
+.topbar-meta { color: var(--muted); font-size: 13px; }
 
-.muted { color: var(--muted); font-size: 13px; }
+.muted { color: var(--muted); font-size: 14px; }
 
 .trip-item {
   display: flex;
@@ -189,44 +196,49 @@ button { cursor: pointer; }
 h2 {
   margin: 0;
   font-family: var(--serif);
-  font-size: 26px;
-  font-weight: 700;
+  font-size: 28px;
+  font-weight: 800;
   letter-spacing: -0.02em;
 }
 
 .lead {
   margin: 6px 0 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
 }
 
+/* 요약 숫자: 진한 남색 띠 대신 밝은 카드로 (모바일 앱과 같은 부드러운 톤) */
 .stats {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
   margin-bottom: 20px;
-  background: var(--navy);
-  color: white;
-  border-radius: var(--radius);
 }
 
 .stat {
-  padding: 18px 22px;
-  border-left: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 16px 18px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-top: 4px solid var(--accent);
+  border-radius: var(--radius);
 }
 
-.stat:first-child { border-left: 0; }
+.stat:nth-child(2) { border-top-color: var(--success); }
+.stat:nth-child(3) { border-top-color: var(--tram); }
+.stat:nth-child(4) { border-top-color: #8b6fd0; }
+.stat:nth-child(5) { border-top-color: #d9774a; }
 
 .stat b {
   display: block;
   font-family: var(--serif);
-  font-size: 30px;
-  font-weight: 700;
+  font-size: 32px;
+  font-weight: 800;
   letter-spacing: -0.02em;
   margin-top: 2px;
-  color: var(--tram);
+  color: var(--ink);
 }
 
-.stat span { color: rgba(255, 255, 255, 0.7); font-size: 12px; font-weight: 600; }
+.stat span { color: var(--muted); font-size: 13px; font-weight: 700; }
 
 .panel {
   background: var(--card);
@@ -271,16 +283,16 @@ table.data {
 table.data th,
 table.data td {
   text-align: left;
-  padding: 11px 14px;
+  padding: 13px 16px;
   border-bottom: 1px solid var(--line);
   vertical-align: middle;
 }
 
 table.data th {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--muted);
-  background: var(--bg);
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink);
+  background: var(--sidebar-2);
 }
 
 table.data tbody tr:hover { background: var(--accent-soft); }
@@ -297,9 +309,9 @@ table.data th.right { text-align: right; }
 .badge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
   font-weight: 700;
   background: #f3f4f6;
   color: #374151;
@@ -318,18 +330,30 @@ table.data th.right { text-align: right; }
 .badge.medicine { background: #fef2f2; color: #b91c1c; }
 .badge.other { background: #f3f4f6; color: #374151; }
 
+/* 여행 상태 */
+.badge.live { background: var(--success); color: #fff; }
+.badge.soon { background: var(--accent-soft); color: var(--accent-ink); }
+.badge.done { background: #eceff3; color: #5b6572; }
+table.data tr.row-done td { color: var(--muted); }
+table.data td.empty { padding: 44px 16px; line-height: 1.8; }
+
 .row-actions { display: flex; gap: 6px; justify-content: flex-end; }
 
 .btn,
 button {
   border: 1px solid transparent;
-  border-radius: 8px;
-  padding: 8px 14px;
+  border-radius: 10px;
+  min-height: 38px;
+  padding: 8px 16px;
   background: var(--accent);
   color: white;
-  font-weight: 600;
-  font-size: 13px;
+  font-weight: 700;
+  font-size: 14px;
+  transition: background 0.12s, transform 0.08s;
 }
+
+.btn:active,
+button:active { transform: scale(0.97); }
 
 a.btn {
   display: inline-flex;
@@ -361,7 +385,7 @@ button.danger {
 button.danger:hover { background: var(--danger-soft); }
 
 .btn.sm,
-button.sm { padding: 5px 9px; font-size: 12px; }
+button.sm { min-height: 32px; padding: 5px 12px; font-size: 13px; }
 
 .form-row {
   display: grid;
@@ -370,18 +394,19 @@ button.sm { padding: 5px 9px; font-size: 12px; }
 }
 
 label {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
-  color: #4b5563;
+  color: var(--ink);
 }
 
 input,
 select,
 textarea {
   width: 100%;
+  min-height: 40px;
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
-  padding: 8px 10px;
+  border-radius: 8px;
+  padding: 9px 12px;
   background: white;
 }
 
@@ -396,13 +421,35 @@ textarea { min-height: 92px; resize: vertical; }
 
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
+/* 저장·수정 안내: 화면 아래에 떴다가 3초쯤 뒤 저절로 사라진다 (모바일 앱과 같은 방식) */
 .flash {
-  margin-bottom: 12px;
-  padding: 8px 12px;
-  border-radius: 6px;
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  z-index: 200;
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 12px 20px;
+  border-radius: 999px;
   background: var(--success-soft);
-  color: #065f46;
-  font-size: 13px;
+  border: 1px solid #a8dcc5;
+  color: #14583f;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 10px 30px rgba(16, 38, 63, 0.18);
+  pointer-events: none;
+  animation: flash-life 3.2s ease forwards;
+}
+
+@keyframes flash-life {
+  0% { opacity: 0; transform: translate(-50%, 12px); }
+  8% { opacity: 1; transform: translate(-50%, 0); }
+  86% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, 0); visibility: hidden; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flash { animation-duration: 3.2s; }
 }
 
 .drawer-backdrop {
@@ -671,6 +718,7 @@ pre.clip {
 
 .map-search { display: flex; gap: 8px; }
 .map-search input { flex: 1; min-width: 0; }
+.map-search .map-country { width: 150px; flex: none; }
 
 .map-canvas {
   width: 100%;
@@ -875,11 +923,12 @@ pre.clip {
 
 .login-card {
   width: 100%;
-  max-width: 400px;
+  max-width: 440px;
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 32px 28px;
+  border-radius: 16px;
+  padding: 36px 32px;
+  box-shadow: 0 12px 40px rgba(16, 38, 63, 0.08);
 }
 
 .login-brand {
@@ -939,7 +988,7 @@ pre.clip {
 }
 
 .login-tabs button:hover { background: transparent; color: var(--ink); }
-.login-tabs button.active { background: var(--navy); color: #fff; }
+.login-tabs button.active { background: var(--accent); color: #fff; }
 
 .login-notice {
   margin: 0 0 12px;

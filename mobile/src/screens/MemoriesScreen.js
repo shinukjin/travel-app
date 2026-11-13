@@ -9,7 +9,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { countryLabels } from '../countries';
 import { colors, formatDay, formatRange, radius, space } from '../theme';
-import { Icon, Screen, TripPicker } from '../ui';
+import { Icon, Screen, TripLabel } from '../ui';
+import { useGuide } from '../GuideContext';
 import { storage } from '../storage';
 import { createHighlightVideo } from '../highlight';
 import { loadGuideCache, matchTripByDate, syncPendingMedia } from '../sync';
@@ -20,17 +21,14 @@ function toLocalDateTime(date) {
 
 export default function MemoriesScreen({ embed }) {
   const insets = useSafeAreaInsets();
-  const [trips, setTrips] = useState([]);
-  const [tripId, setTripId] = useState(null);
+  // 여행 선택은 홈에서 — 이 화면은 선택된 여행의 사진만 보여 준다
+  const { trip, tripId, selectTrip } = useGuide();
   const [media, setMedia] = useState([]);
   const [busy, setBusy] = useState(false);
   const [videoUri, setVideoUri] = useState(null);
   const [viewIndex, setViewIndex] = useState(null);
 
   const refresh = useCallback(async () => {
-    const cache = await loadGuideCache();
-    setTrips(cache.trips);
-    setTripId((current) => current || cache.trips[0]?.id || null);
     try {
       setMedia(await syncPendingMedia());
     } catch {
@@ -40,7 +38,6 @@ export default function MemoriesScreen({ embed }) {
 
   useFocusEffect(useCallback(() => { refresh(); }, [refresh]));
 
-  const trip = trips.find((item) => item.id === tripId);
   const filtered = useMemo(
     () => media.filter((item) => item.tripId === tripId).sort((a, b) => String(b.capturedAt).localeCompare(String(a.capturedAt))),
     [media, tripId]
@@ -85,7 +82,7 @@ export default function MemoriesScreen({ embed }) {
     const next = [entry, ...(await storage.getMedia())];
     await storage.setMedia(next);
     setMedia(next);
-    setTripId(matched.id);
+    selectTrip(matched.id);
     try {
       setMedia(await syncPendingMedia());
     } catch {
@@ -131,7 +128,7 @@ export default function MemoriesScreen({ embed }) {
 
   return (
     <Screen scroll inHub={embed} contentStyle={styles.page}>
-      {trips.length > 1 ? <TripPicker trips={trips} tripId={tripId} onSelect={setTripId} /> : null}
+      <TripLabel trip={trip} />
 
       {coverUri ? (
         <ImageBackground source={{ uri: coverUri }} imageStyle={styles.coverImage} style={styles.cover}>

@@ -3,11 +3,13 @@ import { Alert, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-nat
 import { Text, TextInput } from '../Text';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useGuide } from '../GuideContext';
+import { sortTripsForHome, useGuide } from '../GuideContext';
 import { PINNED, countryFlag, countryLabel, countryLabels, parseCountries, searchCountries } from '../countries';
 import { colors, formatRange, radius, space } from '../theme';
 import { Icon, Screen } from '../ui';
+import { useToast } from '../Toast';
 import { api } from '../api';
+import { APP_VERSION_LABEL } from '../appVersion';
 import { useAuth } from '../AuthContext';
 import ChangePasswordScreen from './ChangePasswordScreen';
 import { clearGuideCache, refreshGuideCache } from '../sync';
@@ -39,6 +41,10 @@ function durationText(start, end) {
   const days = Math.round((b - a) / DAY_MS) + 1;
   return days === 1 ? '당일치기' : `${days - 1}박 ${days}일`;
 }
+
+/** 여행이 이 개수보다 많아지면 검색창을 보여 주고, 다녀온 여행이 이 개수보다 많으면 접어 둔다 */
+const SEARCH_FROM = 5;
+const DONE_OPEN_MAX = 3;
 
 function tripState(trip) {
   const a = parseDate(trip.startDate);
@@ -95,12 +101,12 @@ function TripSheet({ visible, form, setForm, saving, onSave, onDelete, onClose }
         <ScrollView style={styles.flex1} contentContainerStyle={styles.sheetBody} keyboardShouldPersistTaps="handled">
           <View style={styles.field}>
             <Text style={styles.label}>여행 이름</Text>
-            <TextInput style={styles.input} value={form.title} onChangeText={(v) => patch('title', v)} placeholder="예: 스페인 신혼여행" placeholderTextColor={colors.faint} />
+            <TextInput style={styles.input} value={form.title} onChangeText={(v) => patch('title', v)} placeholder="예: 유럽 신혼여행" placeholderTextColor={colors.faint} />
           </View>
 
           <View style={styles.field}>
             <Text style={styles.label}>도시·지역 (선택)</Text>
-            <TextInput style={styles.input} value={form.destination} onChangeText={(v) => patch('destination', v)} placeholder="예: 바르셀로나" placeholderTextColor={colors.faint} />
+            <TextInput style={styles.input} value={form.destination} onChangeText={(v) => patch('destination', v)} placeholder="예: 도시나 지역 이름" placeholderTextColor={colors.faint} />
           </View>
 
           <View style={styles.field}>
@@ -213,7 +219,50 @@ export default function SettingsScreen({ embed }) {
   const [form, setForm] = useState(emptyForm());
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [status, setStatus] = useState('');
+  // 결과 안내는 잠깐 떴다가 저절로 사라지는 알림으로 보여 준다
+  const toast = useToast();
+  const setStatus = (message) => {
+    if (message) toast.show(message);
+  };
+  const [tripQuery, setTripQuery] = useState('');
+  const [doneOpen, setDoneOpen] = useState(null); // null = 자동(많으면 접힘)
+
+  // 진행 중·예정은 가까운 순으로 위에, 완료는 아래로(최근에 다녀온 순) — 홈의 여행 선택과 같은 순서
+  const q = tripQuery.trim().toLowerCase();
+  const matches = (t) =>
+    !q || [t.title, t.destination, countryLabels(t.country)].some((v) => String(v || '').toLowerCase().includes(q));
+  const ordered = sortTripsForHome(trips).filter(matches);
+  const isDone = (t) => tripState(t)?.tone === 'done';
+  const activeTrips = ordered.filter((t) => !isDone(t));
+  const doneTrips = ordered.filter(isDone);
+  // 다녀온 여행이 DONE_OPEN_MAX 개 이하면 펼치고, 더 많으면 접어 둔다. 검색 중에는 항상 펼친다
+  const doneExpanded = Boolean(q) || (doneOpen === null ? doneTrips.length <= DONE_OPEN_MAX : doneOpen);
+
+  function renderTrip(trip) {
+    const state = tripState(trip);
+    const duration = durationText(trip.startDate, trip.endDate);
+    return (
+      <Pressable key={trip.id} onPress={() => openEdit(trip)} style={({ pressed }) => [styles.trip, state?.tone === 'done' && styles.tripDone, pressed && styles.rowPressed]} accessibilityRole="button" accessibilityLabel={`${trip.title} 수정`}>
+        <View style={styles.flagBox}>
+          <Text style={styles.flag}>{parseCountries(trip.country).slice(0, 1).map(countryFlag).join('') || '🌍'}</Text>
+        </View>
+        <View style={styles.flex1}>
+          <Text style={styles.tripTitle} numberOfLines={1}>
+            {trip.title}
+          </Text>
+          <Text style={styles.tripMeta} numberOfLines={1}>
+            {[trip.destination || countryLabels(trip.country), formatRange(trip.startDate, trip.endDate), duration].filter(Boolean).join(' · ')}
+          </Text>
+        </View>
+        {state ? (
+          <View style={[styles.stateTag, state.tone === 'live' && styles.stateLive, state.tone === 'done' && styles.stateDone]}>
+            <Text style={[styles.stateText, state.tone === 'live' && styles.stateTextLive]}>{state.text}</Text>
+          </View>
+        ) : null}
+        <Icon name="chevron-forward" size={16} color={colors.faint} />
+      </Pressable>
+    );
+  }
 
   function openNew() {
     setForm(emptyForm());
@@ -353,13 +402,6 @@ export default function SettingsScreen({ embed }) {
         </Pressable>
       ) : null}
 
-      {status ? (
-        <View style={styles.status}>
-          <Icon name="checkmark-circle" size={18} color={colors.forest} />
-          <Text style={styles.statusText}>{status}</Text>
-        </View>
-      ) : null}
-
       <View style={styles.sectionHead}>
         <Text style={styles.sectionTitle}>내 여행</Text>
         <Pressable onPress={openNew} style={styles.newBtn} accessibilityRole="button" accessibilityLabel="새 여행">
@@ -368,32 +410,49 @@ export default function SettingsScreen({ embed }) {
         </Pressable>
       </View>
 
-      {trips.length ? (
-        trips.map((trip) => {
-          const state = tripState(trip);
-          const duration = durationText(trip.startDate, trip.endDate);
-          return (
-            <Pressable key={trip.id} onPress={() => openEdit(trip)} style={({ pressed }) => [styles.trip, pressed && styles.rowPressed]} accessibilityRole="button" accessibilityLabel={`${trip.title} 수정`}>
-              <View style={styles.flagBox}>
-                <Text style={styles.flag}>{parseCountries(trip.country).slice(0, 1).map(countryFlag).join('') || '🌍'}</Text>
-              </View>
-              <View style={styles.flex1}>
-                <Text style={styles.tripTitle} numberOfLines={1}>
-                  {trip.title}
-                </Text>
-                <Text style={styles.tripMeta} numberOfLines={1}>
-                  {[trip.destination || countryLabels(trip.country), formatRange(trip.startDate, trip.endDate), duration].filter(Boolean).join(' · ')}
-                </Text>
-              </View>
-              {state ? (
-                <View style={[styles.stateTag, state.tone === 'live' && styles.stateLive, state.tone === 'done' && styles.stateDone]}>
-                  <Text style={[styles.stateText, state.tone === 'live' && styles.stateTextLive]}>{state.text}</Text>
-                </View>
-              ) : null}
-              <Icon name="chevron-forward" size={16} color={colors.faint} />
+      {trips.length > SEARCH_FROM ? (
+        <View style={styles.tripSearch}>
+          <Icon name="search" size={18} color={colors.faint} />
+          <TextInput
+            style={styles.tripSearchInput}
+            value={tripQuery}
+            onChangeText={setTripQuery}
+            placeholder="여행 이름·나라·도시 검색"
+            placeholderTextColor={colors.faint}
+          />
+          {tripQuery ? (
+            <Pressable onPress={() => setTripQuery('')} hitSlop={8} accessibilityRole="button" accessibilityLabel="검색어 지우기">
+              <Icon name="close-circle" size={18} color={colors.faint} />
             </Pressable>
-          );
-        })
+          ) : null}
+        </View>
+      ) : null}
+
+      {trips.length ? (
+        <>
+          {activeTrips.map(renderTrip)}
+
+          {/* 다녀온 여행 — 아래로, 최근에 다녀온 순. 많으면 접어 둔다 */}
+          {doneTrips.length ? (
+            <>
+              <Pressable
+                onPress={() => setDoneOpen(!doneExpanded)}
+                disabled={Boolean(q)}
+                style={styles.doneHead}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: doneExpanded }}
+              >
+                <Text style={styles.doneTitle}>다녀온 여행</Text>
+                <Text style={styles.doneCount}>{doneTrips.length}</Text>
+                <View style={styles.flex1} />
+                {q ? null : <Icon name={doneExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.muted} />}
+              </Pressable>
+              {doneExpanded ? doneTrips.map(renderTrip) : null}
+            </>
+          ) : null}
+
+          {q && !activeTrips.length && !doneTrips.length ? <Text style={styles.noTrip}>검색 결과가 없어요.</Text> : null}
+        </>
       ) : (
         <View style={styles.emptyCard}>
           <Icon name="airplane-outline" size={28} color={colors.accent} />
@@ -422,7 +481,8 @@ export default function SettingsScreen({ embed }) {
       <Text style={[styles.sectionTitle, styles.sectionGap]}>정보</Text>
       <View style={styles.group}>
         <Row icon="cloud-outline" label="서버" value="Supabase" />
-        <Row icon="phone-portrait-outline" label="사진 원본" value="이 기기에만 저장" last />
+        <Row icon="phone-portrait-outline" label="사진 원본" value="이 기기에만 저장" />
+        <Row icon="information-circle-outline" label="앱 버전" value={APP_VERSION_LABEL} last />
       </View>
 
       <Modal visible={pwOpen} animationType="slide" onRequestClose={() => setPwOpen(false)}>
@@ -454,6 +514,13 @@ const styles = StyleSheet.create({
   newBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: space.md, height: 36, borderRadius: radius.pill, backgroundColor: colors.accent },
   newText: { fontSize: 13, fontWeight: '700', color: '#fff' },
   trip: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md, borderRadius: radius.card, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
+  tripDone: { backgroundColor: colors.surfaceTint },
+  tripSearch: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.md, height: 44, borderRadius: radius.control, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
+  tripSearchInput: { flex: 1, fontSize: 15, color: colors.ink, paddingVertical: 0 },
+  doneHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.sm, paddingVertical: space.sm },
+  doneTitle: { fontSize: 14, fontWeight: '800', color: colors.muted },
+  doneCount: { fontSize: 12, fontWeight: '800', color: colors.muted, paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted },
+  noTrip: { textAlign: 'center', color: colors.muted, fontSize: 14, paddingVertical: space.lg },
   flagBox: { width: 48, height: 48, borderRadius: 14, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
   flag: { fontSize: 24 },
   tripTitle: { fontSize: 16, fontWeight: '800', color: colors.ink },
@@ -488,9 +555,9 @@ const styles = StyleSheet.create({
   input: { height: 50, paddingHorizontal: space.md, borderRadius: radius.control, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, fontSize: 16, color: colors.ink },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.md, paddingVertical: 9, borderRadius: radius.pill, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
-  chipOn: { backgroundColor: colors.navy, borderColor: colors.navy },
+  chipOn: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
   chipText: { fontSize: 13, fontWeight: '700', color: colors.ink },
-  chipTextOn: { color: '#fff' },
+  chipTextOn: { color: colors.accentDark },
   countryBox: { gap: space.sm },
   dates: { flexDirection: 'row', alignItems: 'flex-end', gap: space.sm },
   dateBox: { flex: 1, gap: 4 },

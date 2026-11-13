@@ -266,7 +266,29 @@ export function createDataApi(sb) {
               .select()
               .single()
           )
-        )
+        ),
+      /** 앱에서 만든 메모는 client_id 로 식별한다 */
+      removeByClientId: async (clientId) => {
+        await run(sb.from('memos').delete().eq('client_id', clientId));
+      }
+    },
+
+    /** 공유 링크 — 보낸 사람이 만든 스냅샷. 받는 사람은 토큰으로 get_shared_plan 함수만 쓴다. */
+    sharedPlans: {
+      create: async ({ title, payload }) =>
+        run(sb.from('shared_plans').insert({ title, payload }).select('id, token, title, created_at, expires_at').single()),
+      /** 내가 만든 링크 (최신순) */
+      mine: async () =>
+        run(sb.from('shared_plans').select('id, token, title, created_at, expires_at').order('created_at', { ascending: false })),
+      /** 링크 철회 */
+      remove: async (id) => {
+        await run(sb.from('shared_plans').delete().eq('id', id));
+      },
+      /** 받는 사람: 토큰으로 한 건 읽기 — 없거나 만료되면 null */
+      get: async (token) => {
+        const rows = await run(sb.rpc('get_shared_plan', { p_token: token }));
+        return (Array.isArray(rows) ? rows[0] : rows) || null;
+      }
     },
 
     /** 관리자가 등록해 둔 관광지(좌표 포함). 검색해서 내 장소로 가져올 수 있다. */

@@ -47,7 +47,7 @@ export function HubShell({ tabs, value, onChange, children, fill }) {
       : null;
   return (
     <View style={[styles.root, fill && styles.fill]}>
-      <View style={[styles.head, headFrame, { paddingTop: Math.max(insets.top, space.md) + 4, paddingHorizontal: layout.gutter }]}>
+      <View style={[styles.head, headFrame, { paddingTop: Math.max(insets.top, space.md) + space.md, paddingHorizontal: layout.gutter }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll} contentContainerStyle={styles.tabRow}>
           {tabs.map((option) => {
             const on = option.id === value;
@@ -89,7 +89,7 @@ const styles = StyleSheet.create({
   tabLabel: { fontSize: 16, fontWeight: '600', color: colors.faint, paddingBottom: space.sm },
   tabLabelOn: { color: colors.ink, fontWeight: '800' },
   bar: { height: 3, borderRadius: 2, backgroundColor: 'transparent' },
-  barOn: { backgroundColor: colors.navy },
+  barOn: { backgroundColor: colors.accent },
   body: { flex: 1, minHeight: 0 },
   content: { flex: 1, minHeight: 0 }
 });

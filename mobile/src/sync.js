@@ -69,6 +69,17 @@ export async function syncPendingMemos() {
   return memos;
 }
 
+/**
+ * 메모 삭제 — 이미 서버에 올라간 메모는 서버에서도 지운다.
+ * 서버 삭제가 실패하면(오프라인 등) 예외를 던지고 로컬은 그대로 둔다.
+ */
+export async function deleteMemo(memo) {
+  if (memo.syncStatus === 'synced') await api.deleteMemoByClientId(memo.clientId);
+  const next = (await storage.getMemos()).filter((m) => m.clientId !== memo.clientId);
+  await storage.setMemos(next);
+  return next;
+}
+
 export async function syncPendingMedia() {
   const media = await storage.getMedia();
   const pending = media.filter((item) => item.syncStatus === 'pending');

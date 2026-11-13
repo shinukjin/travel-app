@@ -2,6 +2,7 @@
   "expo": {
     "name": "Honeymoon Guide",
     "slug": "honeymoon-guide",
+    "scheme": "honeymoon",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -65,7 +66,15 @@
         }
       ],
       "expo-font",
-      "expo-video"
+      "expo-video",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "extraProguardRules": "-keep class androidx.work.** { *; }\n-keep class * extends androidx.room.RoomDatabase { *; }\n-keep class androidx.work.impl.WorkDatabase_Impl { *; }\n-keep class androidx.startup.** { *; }"
+          }
+        }
+      ]
     ],
     "web": {
       "favicon": "./assets/favicon.png",

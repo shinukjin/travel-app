@@ -6,27 +6,18 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useGuide } from '../GuideContext';
 import { StackPage } from '../components/StackPage';
 import { api } from '../api';
+import { SPEECH_LOCALES, localeForTrip, localeLabel } from '../countryInfo';
 import { colors, radius, space, type } from '../theme';
-import { Button, Empty, Field, Icon, TripPicker } from '../ui';
+import { Button, Empty, Field, Icon, TripLabel } from '../ui';
+import { useToast } from '../Toast';
 
-/** 여행 국가 → 음성/언어 코드 (입력 생략용) */
-const LOCALE_BY_COUNTRY = {
-  ES: 'es-ES',
-  PT: 'pt-PT',
-  FR: 'fr-FR',
-  IT: 'it-IT',
-  DE: 'de-DE',
-  GB: 'en-GB',
-  US: 'en-US',
-  JP: 'ja-JP'
-};
-
+/** 여행 국가의 음성/언어 코드 (입력 생략용) — 어느 나라든 countryInfo 표로 찾는다 */
 function guessLocale(trip, phrases) {
-  const country = String(trip?.country || '').split(',')[0].trim().toUpperCase();
-  return LOCALE_BY_COUNTRY[country] || phrases[phrases.length - 1]?.locale || '';
+  return localeForTrip(trip) || phrases[phrases.length - 1]?.locale || '';
 }
 
 export default function PhraseScreen({ embed }) {
+  const toast = useToast();
   const insets = useSafeAreaInsets();
   const { trip, trips, tripId, phrases, loading, selectTrip, refresh } = useGuide();
   const [query, setQuery] = useState('');
@@ -41,7 +32,11 @@ export default function PhraseScreen({ embed }) {
   const [locale, setLocale] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const [localeOpen, setLocaleOpen] = useState(false);
+
   const defaultLocale = guessLocale(trip, phrases);
+  // 직접 고른 언어가 없으면 여행 국가 기준 언어
+  const effectiveLocale = locale || defaultLocale;
 
   useEffect(() => {
     setSituationFilter('ALL');
@@ -87,13 +82,13 @@ export default function PhraseScreen({ embed }) {
     const s = situation.trim();
     const k = ko.trim();
     const l = localText.trim();
-    const loc = (locale.trim() || defaultLocale).trim();
+    const loc = effectiveLocale;
     if (!s || !k || !l) {
       Alert.alert('상황, 한국어, 현지어를 입력해 주세요.');
       return;
     }
     if (!loc) {
-      Alert.alert('언어 코드를 입력해 주세요.', '예: es-ES, pt-PT, en-US');
+      Alert.alert('음성 언어를 선택해 주세요.', '문장을 들려줄 언어를 목록에서 골라 주세요.');
       return;
     }
     setSaving(true);
@@ -104,6 +99,7 @@ export default function PhraseScreen({ embed }) {
       setLocalText('');
       setComposing(false);
       await refresh();
+      toast.show('문장을 저장했어요');
     } catch (error) {
       Alert.alert('저장 실패', error.message);
     } finally {
@@ -121,7 +117,7 @@ export default function PhraseScreen({ embed }) {
 
   return (
     <StackPage title="회화" contentStyle={styles.body} embed={embed}>
-      {trips.length > 1 ? <TripPicker trips={trips} tripId={tripId} onSelect={selectTrip} /> : null}
+      <TripLabel trip={trip} />
 
       {phrases.length ? (
         <>
@@ -149,7 +145,7 @@ export default function PhraseScreen({ embed }) {
               accessibilityState={{ checked: slow }}
               accessibilityLabel="천천히 읽기"
             >
-              <Icon name="speedometer-outline" size={16} color={slow ? '#fff' : colors.ink} />
+              <Icon name="speedometer-outline" size={16} color={slow ? colors.accentDark : colors.ink} />
               <Text style={[styles.slowText, slow && styles.slowTextOn]}>천천히</Text>
             </Pressable>
           </View>
@@ -209,16 +205,48 @@ export default function PhraseScreen({ embed }) {
           <Field label="상황" value={situation} onChangeText={setSituation} placeholder="예: 택시 타기" />
           <Field label="한국어" value={ko} onChangeText={setKo} placeholder="말하고 싶은 내용" />
           <Field label="현지어" value={localText} onChangeText={setLocalText} placeholder="현지 표현" />
-          {defaultLocale ? (
-            <Text style={type.meta}>음성 언어: {locale.trim() || defaultLocale} (여행 국가 기준 자동 선택)</Text>
-          ) : null}
-          <Field
-            label={defaultLocale ? '언어 코드 (바꾸려면 입력)' : '언어 코드'}
-            value={locale}
-            onChangeText={setLocale}
-            placeholder="예: es-ES, pt-PT, en-US"
-            autoCapitalize="none"
-          />
+          {/* 음성 언어 — 코드를 입력하지 않고 목록에서 고른다 (기본은 여행 국가 기준) */}
+          <View style={styles.localeBox}>
+            <Text style={styles.localeLabel}>음성 언어</Text>
+            <Pressable
+              onPress={() => setLocaleOpen((open) => !open)}
+              style={styles.select}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: localeOpen }}
+              accessibilityLabel="음성 언어 선택"
+            >
+              <Text style={[styles.selectText, !effectiveLocale && styles.selectPlaceholder]} numberOfLines={1}>
+                {effectiveLocale ? `${localeLabel(effectiveLocale)} · ${effectiveLocale}` : '언어를 선택하세요'}
+              </Text>
+              <Icon name={localeOpen ? 'chevron-up' : 'chevron-down'} size={18} color={colors.muted} />
+            </Pressable>
+            {localeOpen ? (
+              <ScrollView style={styles.options} nestedScrollEnabled showsVerticalScrollIndicator>
+                {SPEECH_LOCALES.map((option) => {
+                  const on = option.id === effectiveLocale;
+                  return (
+                    <Pressable
+                      key={option.id}
+                      onPress={() => {
+                        setLocale(option.id);
+                        setLocaleOpen(false);
+                      }}
+                      style={({ pressed }) => [styles.option, on && styles.optionOn, pressed && styles.pressed]}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: on }}
+                    >
+                      <Text style={[styles.optionText, on && styles.optionTextOn]}>{option.label}</Text>
+                      <Text style={styles.optionCode}>{option.id}</Text>
+                      {on ? <Icon name="checkmark" size={16} color={colors.accent} /> : null}
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            ) : null}
+            {defaultLocale && effectiveLocale === defaultLocale ? (
+              <Text style={type.meta}>여행 국가에 맞춰 자동으로 골랐어요. 다른 언어는 눌러서 바꿀 수 있어요.</Text>
+            ) : null}
+          </View>
           <View style={styles.composeActions}>
             <Button label="취소" variant="ghost" onPress={() => setComposing(false)} />
             <View style={styles.flex1}>
@@ -264,6 +292,17 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.bg },
   flex1: { flex: 1 },
   pressed: { opacity: 0.9 },
+  localeBox: { gap: space.sm },
+  localeLabel: { fontSize: 13, fontWeight: '700', color: colors.muted },
+  select: { flexDirection: 'row', alignItems: 'center', gap: space.sm, height: 50, paddingHorizontal: space.md, borderRadius: radius.control, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
+  selectText: { flex: 1, fontSize: 16, fontWeight: '600', color: colors.ink },
+  selectPlaceholder: { color: colors.faint, fontWeight: '400' },
+  options: { maxHeight: 240, borderRadius: radius.control, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
+  option: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: 12, paddingHorizontal: space.md },
+  optionOn: { backgroundColor: colors.accentSoft },
+  optionText: { flex: 1, fontSize: 15, fontWeight: '600', color: colors.ink },
+  optionTextOn: { color: colors.accentDark, fontWeight: '800' },
+  optionCode: { fontSize: 12, color: colors.faint },
   searchRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   search: {
     flex: 1,
@@ -289,9 +328,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.line
   },
-  slowOn: { backgroundColor: colors.navy, borderColor: colors.navy },
+  slowOn: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
   slowText: { fontSize: 13, fontWeight: '700', color: colors.ink },
-  slowTextOn: { color: '#fff' },
+  slowTextOn: { color: colors.accentDark },
   chipScroll: { flexGrow: 0 },
   chips: { gap: space.sm, paddingRight: space.lg },
   chip: {
@@ -302,9 +341,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.line
   },
-  chipOn: { backgroundColor: colors.navy, borderColor: colors.navy },
+  chipOn: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
   chipText: { fontSize: 13, fontWeight: '700', color: colors.muted },
-  chipTextOn: { color: '#fff' },
+  chipTextOn: { color: colors.accentDark },
   card: {
     gap: space.sm,
     padding: space.lg,

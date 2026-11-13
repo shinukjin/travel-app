@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Linking, Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Text } from './src/Text';
-import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme, useNavigation } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -11,10 +11,13 @@ import { useFonts } from 'expo-font';
 import { FONT_FILES } from './src/fonts';
 import { AppSplash, SplashBase } from './src/components/AppSplash';
 import { useGuide } from './src/GuideContext';
+import { handleIncomingUrl, subscribePendingShare, takePendingShare } from './src/shareLink';
+import ImportShareScreen from './src/screens/ImportShareScreen';
 import { AuthProvider, useAuth } from './src/AuthContext';
 import LoginScreen from './src/screens/LoginScreen';
 import ChangePasswordScreen from './src/screens/ChangePasswordScreen';
 import { GuideProvider } from './src/GuideContext';
+import { ToastProvider } from './src/Toast';
 import { LayoutProvider } from './src/layout';
 import HomeScreen from './src/screens/HomeScreen';
 import TravelHubScreen from './src/screens/TravelHubScreen';
@@ -67,14 +70,42 @@ function RootNav() {
     <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
       <Stack.Screen name="Tabs" component={MainTabs} />
       <Stack.Screen name="장소" component={PlaceInfoScreen} />
+      <Stack.Screen name="공유 가져오기" component={ImportShareScreen} />
     </Stack.Navigator>
   );
 }
 
-/** 여행 데이터 로딩이 끝날 때까지 시작 화면을 유지한다 */
-function SplashGate() {
+/**
+ * 공유 링크(honeymoon://share/…)로 앱이 열리면 가져오기 화면으로 보낸다.
+ * 로그인·데이터 로딩 전에 열린 링크는 대기해 두었다가 이 컴포넌트가 나타나는 시점에 처리한다.
+ */
+function ShareLinkListener() {
+  const navigation = useNavigation();
+  useEffect(() => {
+    const open = (token) => token && navigation.navigate('공유 가져오기', { token });
+    open(takePendingShare());
+    return subscribePendingShare(() => open(takePendingShare()));
+  }, [navigation]);
+  return null;
+}
+
+/**
+ * 여행 데이터 로딩이 끝날 때까지 시작 화면을 유지한다.
+ * 로딩 중에는 하단 탭을 포함한 앱 본체를 아예 그리지 않아, 탭 바가 시작 화면 위·아래로 비치지 않게 한다.
+ */
+function GuideGate() {
   const { loading } = useGuide();
-  return <AppSplash ready={!loading} />;
+  return (
+    <>
+      {loading ? null : (
+        <>
+          <RootNav />
+          <ShareLinkListener />
+        </>
+      )}
+      <AppSplash ready={!loading} />
+    </>
+  );
 }
 
 /** 로그인 여부에 따라 로그인 화면 또는 앱 본체를 보여 준다 */
@@ -89,8 +120,7 @@ function AuthGate() {
         <ChangePasswordScreen forced />
       ) : session ? (
         <GuideProvider key={session.user.id}>
-          <RootNav />
-          <SplashGate />
+          <GuideGate />
         </GuideProvider>
       ) : (
         <LoginScreen />
@@ -104,7 +134,9 @@ function AppNavigation() {
     <NavigationContainer theme={navTheme}>
       <LayoutProvider>
         <AuthProvider>
-          <AuthGate />
+          <ToastProvider>
+            <AuthGate />
+          </ToastProvider>
         </AuthProvider>
       </LayoutProvider>
     </NavigationContainer>
@@ -165,6 +197,14 @@ function WebShell({ children }) {
 
 export default function App() {
   const [fontsLoaded, fontError] = useFonts(FONT_FILES);
+
+  // 링크로 앱이 열렸을 때(콜드 스타트)와 이미 실행 중일 때 모두 받는다
+  useEffect(() => {
+    Linking.getInitialURL().then((url) => url && handleIncomingUrl(url)).catch(() => {});
+    const sub = Linking.addEventListener('url', ({ url }) => handleIncomingUrl(url));
+    return () => sub.remove();
+  }, []);
+
   if (!fontsLoaded && !fontError) return <SplashBase />;
 
   const app = <AppNavigation />;

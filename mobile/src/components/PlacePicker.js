@@ -3,9 +3,10 @@ import { ActivityIndicator, Alert, Animated, Modal, PanResponder, Pressable, Scr
 import { Text, TextInput } from '../Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '../api';
-import { geocodeQuery } from '../maps/geocode';
+import { searchPlaces } from '../maps/geocode';
+import ExploreMap from './ExploreMap';
 import { categoryMeta, colors, radius, space } from '../theme';
-import { countryFlag, countryLabel, parseCountries } from '../countries';
+import { countryFlag, countryLabel, parseCountries, searchCountries } from '../countries';
 import { Icon } from '../ui';
 
 const CATEGORY_FILTERS = [{ id: 'ALL', label: '전체', icon: null }, ...Object.entries(categoryMeta).map(([id, m]) => ({ id, label: m.label, icon: m.icon, color: m.color }))];
@@ -37,12 +38,12 @@ function AddPill({ state }) {
  */
 export default function PlacePicker({ visible, onClose, onPick, onDelete, onUndoDelete, addedCount, addedIds, pendingDelete, tripCountry }) {
   const insets = useSafeAreaInsets();
-  const [source, setSource] = useState('catalog');
+  const [source, setSource] = useState('mine');
   const [query, setQuery] = useState('');
   const [cat, setCat] = useState('ALL');
 
-  // 좌우로 밀면 추천 관광지 <-> 내 장소 전환
-  const sourceRef = useRef('catalog');
+  // 좌우로 밀면 내 장소 <-> 추천 관광지 전환 (탭 순서: 내 장소 · 추천 관광지)
+  const sourceRef = useRef('mine');
   sourceRef.current = source;
   const slide = useRef(new Animated.Value(0)).current;
   const swipe = useRef(
@@ -50,7 +51,7 @@ export default function PlacePicker({ visible, onClose, onPick, onDelete, onUndo
       onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 18 && Math.abs(g.dx) > Math.abs(g.dy) * 2,
       onPanResponderRelease: (_, g) => {
         if (Math.abs(g.dx) < 60 && Math.abs(g.vx) < 0.5) return;
-        const next = g.dx < 0 ? 'mine' : 'catalog'; // 왼쪽으로 밀면 내 장소, 오른쪽으로 밀면 추천
+        const next = g.dx < 0 ? 'catalog' : 'mine'; // 왼쪽으로 밀면 오른쪽 탭(추천), 오른쪽으로 밀면 왼쪽 탭(내 장소)
         if (next === sourceRef.current) return;
         setSource(next);
         slide.setValue(g.dx < 0 ? 40 : -40);
@@ -63,6 +64,12 @@ export default function PlacePicker({ visible, onClose, onPick, onDelete, onUndo
   const [places, setPlaces] = useState([]);
   const [loadingPlaces, setLoadingPlaces] = useState(false);
   const [creating, setCreating] = useState(false);
+  // 새 장소 만들 때 위치 확인: 검색어 · 후보 목록(null = 아직 검색 안 함) · 진행 중 · 오류 · 사용자가 고른 후보
+  const [geoQuery, setGeoQuery] = useState('');
+  const [geoResults, setGeoResults] = useState(null);
+  const [geoBusy, setGeoBusy] = useState(false);
+  const [geoError, setGeoError] = useState('');
+  const [chosen, setChosen] = useState(null);
   const [name, setName] = useState('');
   const [nameLocal, setNameLocal] = useState('');
   const [address, setAddress] = useState('');
@@ -83,14 +90,16 @@ export default function PlacePicker({ visible, onClose, onPick, onDelete, onUndo
   const tripCodes = useMemo(() => parseCountries(tripCountry), [tripCountry]);
   const countMap = useMemo(() => Object.fromEntries(catCountries.map((c) => [c.country, c.count])), [catCountries]);
   const otherSelected = !!catCountry && !tripCodes.includes(catCountry);
+  // 추천 관광지가 등록된 나라만이 아니라 모든 나라를 고를 수 있게 한다 (등록된 나라는 위로, 개수 표시)
   const otherList = useMemo(() => {
-    const q = otherQuery.trim().toLowerCase();
-    return catCountries.filter((c) => !q || c.country.toLowerCase().includes(q) || countryLabel(c.country).toLowerCase().includes(q));
-  }, [catCountries, otherQuery]);
+    const all = searchCountries(otherQuery).map((c) => ({ country: c.code, count: countMap[c.code] || 0 }));
+    return [...all.filter((c) => c.count > 0), ...all.filter((c) => c.count === 0)];
+  }, [countMap, otherQuery]);
 
   // 열 때마다 내 장소를 새로 읽는다
   useEffect(() => {
     if (!visible) return;
+    setSource('mine'); // 열 때는 항상 "내 장소" 탭부터
     setLoadingPlaces(true);
     api
       .places()
@@ -183,6 +192,59 @@ export default function PlacePicker({ visible, onClose, onPick, onDelete, onUndo
   }, [catRows]);
   const showGroupHeads = !catCity && groups.length > 1;
 
+  // 웹(Google Places)에서 바로 찾기 — 누를 때만 호출한다
+  const [webRows, setWebRows] = useState(null);
+  const [webBusy, setWebBusy] = useState(false);
+  const [webError, setWebError] = useState('');
+  const [webAddingId, setWebAddingId] = useState(null);
+  const [webAdded, setWebAdded] = useState(() => new Set());
+  const CAT_WORD = { ALL: '인기 관광지', SIGHT: '인기 관광지', FOOD: '맛집', STAY: '숙소', TRANSIT: '역 공항' };
+  const webPlaceName = [catCity, catCountry ? countryLabel(catCountry) : ''].filter(Boolean).join(' ');
+  const webQuery = `${webPlaceName} ${query.trim() || CAT_WORD[cat] || CAT_WORD.ALL}`.trim();
+
+  // 나라·도시·검색어·분류가 바뀌면 이전 웹 검색 결과는 지운다
+  useEffect(() => {
+    setWebRows(null);
+    setWebError('');
+  }, [catCountry, catCity, query, cat, source]);
+
+  async function searchWeb() {
+    if (webBusy) return;
+    setWebBusy(true);
+    setWebError('');
+    try {
+      setWebRows(await searchPlaces(webQuery, 15));
+    } catch (e) {
+      setWebRows([]);
+      setWebError(e.message || '웹에서 찾지 못했어요. 잠시 뒤 다시 시도해 주세요.');
+    } finally {
+      setWebBusy(false);
+    }
+  }
+
+  /** 웹에서 찾은 장소를 내 장소로 저장하고 일정에 담는다 (좌표 포함) */
+  async function pickWeb(item) {
+    setWebAddingId(item.id);
+    try {
+      const created = await api.createPlace({
+        name: item.name,
+        nameLocal: null,
+        category: cat === 'ALL' ? 'SIGHT' : cat,
+        address: item.address || null,
+        lat: item.lat,
+        lng: item.lng,
+        memo: null
+      });
+      setPlaces((list) => [created, ...list]);
+      setWebAdded((s) => new Set(s).add(item.id));
+      onPick(created);
+    } catch (e) {
+      Alert.alert('담지 못했어요', e.message || '네트워크 연결을 확인해 주세요.');
+    } finally {
+      setWebAddingId(null);
+    }
+  }
+
   async function pickCatalog(item) {
     setCatBusyId(item.id);
     try {
@@ -196,32 +258,71 @@ export default function PlacePicker({ visible, onClose, onPick, onDelete, onUndo
     }
   }
 
-  async function createAndPick() {
-    const n = name.trim();
+  /** 위치 검색 — 후보를 최대 5개 보여 주고, 사용자가 하나를 골라 좌표를 확인한다 */
+  async function runGeoSearch(text = geoQuery) {
+    const t = String(text || '').trim();
+    if (!t) return;
+    setGeoBusy(true);
+    setGeoError('');
+    setChosen(null);
+    try {
+      setGeoResults(await searchPlaces(t, 5));
+    } catch (e) {
+      setGeoResults([]);
+      setGeoError(e.message || '장소 검색에 실패했어요. 잠시 뒤 다시 시도해 주세요.');
+    } finally {
+      setGeoBusy(false);
+    }
+  }
+
+  /** 후보 선택 — 이름·주소가 비어 있으면 채워 준다 */
+  function chooseGeo(place) {
+    setChosen(place);
+    if (!name.trim() && place.name) setName(place.name);
+    if (!address.trim() && place.address) setAddress(place.address);
+  }
+
+  function resetCreate() {
+    setName('');
+    setNameLocal('');
+    setAddress('');
+    setCategory('SIGHT');
+    setGeoQuery('');
+    setGeoResults(null);
+    setGeoError('');
+    setChosen(null);
+    setCreating(false);
+  }
+
+  function cancelCreate() {
+    resetCreate();
+  }
+
+  /** 확인한 좌표로 장소를 저장한다. withoutLocation=true 면 좌표 없이 이름만 저장 */
+  async function createAndPick(withoutLocation) {
+    const n = name.trim() || chosen?.name || '';
     if (!n) {
       Alert.alert('장소 이름을 입력해 주세요.');
       return;
     }
+    if (!chosen && !withoutLocation) {
+      Alert.alert('위치를 먼저 확인해 주세요', '장소 이름이나 주소를 검색해서 후보를 골라 주세요.');
+      return;
+    }
     setSaving(true);
     try {
-      // 현지 이름·주소로 좌표를 찾아 지도에도 표시되게 한다 (못 찾아도 장소는 만든다)
-      const hit = await geocodeQuery([nameLocal.trim() || n, address.trim()].filter(Boolean).join(' '));
       const created = await api.createPlace({
         name: n,
         nameLocal: nameLocal.trim() || null,
         category,
-        address: address.trim() || hit?.address || null,
-        lat: hit ? hit.lat : null,
-        lng: hit ? hit.lng : null,
+        address: address.trim() || chosen?.address || null,
+        lat: chosen ? chosen.lat : null,
+        lng: chosen ? chosen.lng : null,
         memo: null
       });
       setPlaces((list) => [created, ...list]);
       onPick(created);
-      setName('');
-      setNameLocal('');
-      setAddress('');
-      setCategory('SIGHT');
-      setCreating(false);
+      resetCreate();
     } catch (e) {
       Alert.alert('장소 저장 실패', e.message);
     } finally {
@@ -233,6 +334,11 @@ export default function PlacePicker({ visible, onClose, onPick, onDelete, onUndo
     if (prefill && !name) setName(prefill);
     setSource('mine');
     setCreating(true);
+    // 검색창에 적어 둔 이름이 있으면 바로 위치를 찾아 보여 준다
+    if (prefill) {
+      setGeoQuery(prefill);
+      runGeoSearch(prefill);
+    }
   }
 
   const q = query.trim();
@@ -244,14 +350,14 @@ export default function PlacePicker({ visible, onClose, onPick, onDelete, onUndo
         <View style={styles.head}>
           <Text style={styles.title}>장소 추가</Text>
           <Pressable onPress={onClose} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel="닫기">
-            <Icon name="close" size={20} color="#fff" />
+            <Icon name="close" size={20} color={colors.accentDark} />
           </Pressable>
         </View>
 
         <View style={styles.tabs}>
           {[
-            { id: 'catalog', label: '추천 관광지' },
-            { id: 'mine', label: `내 장소${myPlaces.length ? ` ${myPlaces.length}` : ''}` }
+            { id: 'mine', label: `내 장소${myPlaces.length ? ` ${myPlaces.length}` : ''}` },
+            { id: 'catalog', label: '추천 관광지' }
           ].map((t) => {
             const on = t.id === source;
             return (
@@ -305,11 +411,11 @@ export default function PlacePicker({ visible, onClose, onPick, onDelete, onUndo
                   );
                 })}
                 <Pressable onPress={() => setShowOther((v) => !v)} style={[styles.chip, styles.chipRow, (otherSelected || showOther) && styles.chipOn]} accessibilityRole="button">
-                  <Icon name="globe-outline" size={14} color={otherSelected || showOther ? '#fff' : colors.muted} />
+                  <Icon name="globe-outline" size={14} color={otherSelected || showOther ? colors.accentDark : colors.muted} />
                   <Text style={[styles.chipText, (otherSelected || showOther) && styles.chipTextOn]}>
                     {otherSelected ? `${countryFlag(catCountry)} ${countryLabel(catCountry)}` : '다른 나라'}
                   </Text>
-                  <Icon name={showOther ? 'chevron-up' : 'chevron-down'} size={14} color={otherSelected || showOther ? '#fff' : colors.muted} />
+                  <Icon name={showOther ? 'chevron-up' : 'chevron-down'} size={14} color={otherSelected || showOther ? colors.accentDark : colors.muted} />
                 </Pressable>
               </ScrollView>
 
@@ -343,11 +449,11 @@ export default function PlacePicker({ visible, onClose, onPick, onDelete, onUndo
                           {countryFlag(c.country)} {countryLabel(c.country)}
                           {tripCodes.includes(c.country) ? '  · 여행 나라' : ''}
                         </Text>
-                        <Text style={styles.otherCount}>{c.count}</Text>
+                        <Text style={[styles.otherCount, !c.count && styles.dim]}>{c.count ? c.count : '준비 중'}</Text>
                         {catCountry === c.country ? <Icon name="checkmark" size={18} color={colors.accent} /> : null}
                       </Pressable>
                     ))}
-                    {!otherList.length ? <Text style={styles.empty}>등록된 나라가 없어요.</Text> : null}
+                    {!otherList.length ? <Text style={styles.empty}>검색한 나라가 없어요.</Text> : null}
                   </ScrollView>
                 </View>
               ) : null}
@@ -375,7 +481,7 @@ export default function PlacePicker({ visible, onClose, onPick, onDelete, onUndo
               const on = c.id === cat;
               return (
                 <Pressable key={c.id} onPress={() => setCat(c.id)} style={[styles.catChip, on && styles.catChipOn]} accessibilityRole="button" accessibilityState={{ selected: on }}>
-                  {c.icon ? <Icon name={c.icon} size={13} color={on ? '#fff' : c.color} /> : null}
+                  {c.icon ? <Icon name={c.icon} size={13} color={on ? colors.accentDark : c.color} /> : null}
                   <Text style={[styles.catChipText, on && styles.chipTextOn]}>{c.label}</Text>
                 </Pressable>
               );
@@ -438,6 +544,57 @@ export default function PlacePicker({ visible, onClose, onPick, onDelete, onUndo
                 </View>
               ) : null}
 
+              {/* 등록된 추천이 부족하면 웹(Google 지도)에서 바로 찾는다 */}
+              <Pressable
+                onPress={searchWeb}
+                disabled={webBusy}
+                style={({ pressed }) => [styles.createRow, pressed && styles.rowPressed]}
+                accessibilityRole="button"
+                accessibilityLabel="웹에서 장소 찾기"
+              >
+                {webBusy ? <ActivityIndicator size="small" color={colors.accent} /> : <Icon name="globe-outline" size={18} color={colors.accent} />}
+                <Text style={styles.createRowText} numberOfLines={1}>
+                  {webBusy ? '웹에서 찾는 중…' : `웹에서 '${webQuery}' 찾기`}
+                </Text>
+              </Pressable>
+              {webError ? <Text style={styles.webError}>{webError}</Text> : null}
+              {webRows && !webRows.length && !webError ? <Text style={styles.empty}>웹에서도 찾지 못했어요. 검색어를 바꿔 보세요.</Text> : null}
+              {webRows?.length ? (
+                <View style={styles.group}>
+                  <Text style={styles.groupHead}>
+                    웹 검색 결과 <Text style={styles.groupCount}>{webRows.length}</Text>
+                  </Text>
+                  {webRows.map((item) => {
+                    const meta = categoryMeta[cat === 'ALL' ? 'SIGHT' : cat] || categoryMeta.SIGHT;
+                    const busy = webAddingId === item.id;
+                    const added = webAdded.has(item.id);
+                    return (
+                      <Pressable
+                        key={item.id}
+                        onPress={() => pickWeb(item)}
+                        disabled={busy || added}
+                        style={({ pressed }) => [styles.row, added && styles.rowAdded, pressed && styles.rowPressed]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${item.name} 일정에 담기`}
+                      >
+                        <View style={[styles.catIcon, { backgroundColor: meta.soft }]}>
+                          <Icon name={meta.icon} size={18} color={meta.color} />
+                        </View>
+                        <View style={styles.flex1}>
+                          <Text style={styles.rowName} numberOfLines={1}>
+                            {item.name}
+                          </Text>
+                          <Text style={styles.rowSub} numberOfLines={1}>
+                            {item.address}
+                          </Text>
+                        </View>
+                        <AddPill state={busy ? 'busy' : added ? 'added' : 'add'} />
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+
               <Pressable onPress={() => startCreate(q)} style={styles.createRow} accessibilityRole="button">
                 <Icon name="create-outline" size={18} color={colors.accent} />
                 <Text style={styles.createRowText} numberOfLines={1}>
@@ -459,29 +616,107 @@ export default function PlacePicker({ visible, onClose, onPick, onDelete, onUndo
               {creating ? (
                 <View style={styles.createBox}>
                   <Text style={styles.createTitle}>새 장소 만들기</Text>
-                  <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="장소 이름" placeholderTextColor={colors.faint} autoFocus />
-                  <TextInput style={styles.input} value={nameLocal} onChangeText={setNameLocal} placeholder="현지 이름 (선택, 지도 검색에 사용)" placeholderTextColor={colors.faint} />
-                  <TextInput style={styles.input} value={address} onChangeText={setAddress} placeholder="주소 (선택)" placeholderTextColor={colors.faint} />
+
+                  {/* 1) 위치 검색 → 후보 선택 → 좌표 확인 */}
+                  <Text style={styles.stepLabel}>1. 위치 찾기</Text>
+                  <View style={styles.geoRow}>
+                    <TextInput
+                      style={[styles.input, styles.flex1]}
+                      value={geoQuery}
+                      onChangeText={setGeoQuery}
+                      placeholder="장소 이름이나 주소 (예: 사그라다 파밀리아)"
+                      placeholderTextColor={colors.faint}
+                      returnKeyType="search"
+                      onSubmitEditing={() => runGeoSearch()}
+                      autoFocus
+                    />
+                    <Pressable onPress={() => runGeoSearch()} disabled={geoBusy || !geoQuery.trim()} style={[styles.geoBtn, (geoBusy || !geoQuery.trim()) && styles.dimBtn]} accessibilityRole="button" accessibilityLabel="위치 검색">
+                      {geoBusy ? <ActivityIndicator size="small" color="#fff" /> : <Icon name="search" size={18} color="#fff" />}
+                    </Pressable>
+                  </View>
+
+                  {geoError ? <Text style={styles.geoError}>{geoError}</Text> : null}
+                  {geoResults && !geoResults.length && !geoError && !geoBusy ? (
+                    <Text style={styles.hint}>검색 결과가 없어요. 현지 이름이나 도시를 함께 적어 보세요. (예: 센소지 도쿄)</Text>
+                  ) : null}
+                  {!chosen && geoResults?.length
+                    ? geoResults.map((p) => (
+                        <Pressable key={p.id} onPress={() => chooseGeo(p)} style={({ pressed }) => [styles.geoItem, pressed && styles.geoItemOn]} accessibilityRole="button" accessibilityLabel={`${p.name}, ${p.address}`}>
+                          <View style={styles.geoPin}>
+                            <Icon name="location" size={16} color={colors.accent} />
+                          </View>
+                          <View style={styles.flex1}>
+                            <Text style={styles.geoName} numberOfLines={1}>
+                              {p.name || p.address}
+                            </Text>
+                            {p.address ? (
+                              <Text style={styles.geoAddr} numberOfLines={2}>
+                                {p.address}
+                              </Text>
+                            ) : null}
+                          </View>
+                          <Icon name="chevron-forward" size={16} color={colors.faint} />
+                        </Pressable>
+                      ))
+                    : null}
+
+                  {/* 선택한 위치 확인 — 좌표와 미리보기 지도 */}
+                  {chosen ? (
+                    <View style={styles.chosenBox}>
+                      <View style={styles.chosenHead}>
+                        <Icon name="checkmark-circle" size={20} color={colors.forest} />
+                        <Text style={styles.chosenTitle}>위치를 확인했어요</Text>
+                        <View style={styles.flex1} />
+                        <Pressable onPress={() => setChosen(null)} hitSlop={8} accessibilityRole="button">
+                          <Text style={styles.chosenRetry}>다시 찾기</Text>
+                        </Pressable>
+                      </View>
+                      <Text style={styles.chosenName} numberOfLines={2}>
+                        {chosen.name || chosen.address}
+                      </Text>
+                      {chosen.name && chosen.address ? (
+                        <Text style={styles.geoAddr} numberOfLines={2}>
+                          {chosen.address}
+                        </Text>
+                      ) : null}
+                      <Text style={styles.chosenCoord}>
+                        좌표 {chosen.lat.toFixed(5)}, {chosen.lng.toFixed(5)}
+                      </Text>
+                      <View style={styles.mapBox}>
+                        <ExploreMap compact places={[]} center={{ lat: chosen.lat, lng: chosen.lng, label: chosen.name || '선택한 위치' }} />
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {/* 2) 이름·분류 */}
+                  <Text style={styles.stepLabel}>2. 이름과 분류</Text>
+                  <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="장소 이름" placeholderTextColor={colors.faint} />
+                  <TextInput style={styles.input} value={nameLocal} onChangeText={setNameLocal} placeholder="현지 이름 (선택)" placeholderTextColor={colors.faint} />
                   <View style={styles.catRow}>
                     {Object.entries(categoryMeta).map(([id, m]) => {
                       const on = id === category;
                       return (
-                        <Pressable key={id} onPress={() => setCategory(id)} style={[styles.catPill, on && { backgroundColor: m.color }]}>
-                          <Icon name={m.icon} size={14} color={on ? '#fff' : m.color} />
+                        <Pressable key={id} onPress={() => setCategory(id)} style={[styles.catPill, on && { backgroundColor: m.soft }]}>
+                          <Icon name={m.icon} size={14} color={m.color} />
                           <Text style={[styles.catPillText, on && styles.chipTextOn]}>{m.label}</Text>
                         </Pressable>
                       );
                     })}
                   </View>
-                  <Text style={styles.hint}>이름과 주소로 위치를 자동으로 찾아 지도에 표시해요.</Text>
+                  <Text style={styles.hint}>{chosen ? '확인한 좌표가 저장돼서 지도 핀과 이동 시간이 나와요.' : '위치를 찾아 고르면 좌표가 저장돼서 지도에 표시돼요.'}</Text>
                   <View style={styles.btnRow}>
-                    <Pressable onPress={() => setCreating(false)} style={styles.btnGhost}>
+                    <Pressable onPress={cancelCreate} style={styles.btnGhost}>
                       <Text style={styles.btnGhostText}>취소</Text>
                     </Pressable>
-                    <Pressable onPress={createAndPick} disabled={saving} style={[styles.btnPrimary, saving && styles.dimBtn]}>
-                      <Text style={styles.btnPrimaryText}>{saving ? '위치 찾는 중…' : '만들고 담기'}</Text>
+                    <Pressable onPress={() => createAndPick(false)} disabled={saving || !chosen} style={[styles.btnPrimary, (saving || !chosen) && styles.dimBtn]} accessibilityRole="button">
+                      <Text style={styles.btnPrimaryText}>{saving ? '저장 중…' : '만들고 담기'}</Text>
                     </Pressable>
                   </View>
+                  {!chosen ? (
+                    <Pressable onPress={() => createAndPick(true)} disabled={saving || !name.trim()} style={styles.noLoc} accessibilityRole="button">
+                      <Text style={[styles.noLocText, !name.trim() && styles.dimBtn]}>위치 없이 이름만 저장</Text>
+                    </Pressable>
+                  ) : null}
                 </View>
               ) : (
                 <Pressable onPress={() => startCreate(q)} style={styles.newPlace} accessibilityRole="button">
@@ -550,12 +785,12 @@ const styles = StyleSheet.create({
   sheet: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: space.lg, gap: space.md },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { fontSize: 22, fontWeight: '800', color: colors.ink },
-  closeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.navy, alignItems: 'center', justifyContent: 'center' },
+  closeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
   tabs: { flexDirection: 'row', padding: 4, gap: 4, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted },
   tab: { flex: 1, height: 40, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
-  tabOn: { backgroundColor: colors.navy },
+  tabOn: { backgroundColor: colors.card },
   tabText: { fontSize: 14, fontWeight: '700', color: colors.muted },
-  tabTextOn: { color: '#fff' },
+  tabTextOn: { color: colors.accentDark },
   search: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.md, height: 48, borderRadius: radius.control, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
   searchSm: { height: 42 },
   searchInput: { flex: 1, fontSize: 15, color: colors.ink, paddingVertical: 0 },
@@ -564,16 +799,17 @@ const styles = StyleSheet.create({
   chips: { gap: space.sm, paddingRight: space.lg, alignItems: 'center' },
   chip: { paddingHorizontal: space.md, height: 38, justifyContent: 'center', borderRadius: radius.pill, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
   chipRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  chipOn: { backgroundColor: colors.navy, borderColor: colors.navy },
+  chipOn: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
   chipText: { fontSize: 14, fontWeight: '700', color: colors.ink },
-  chipTextOn: { color: '#fff' },
+  chipTextOn: { color: colors.accentDark },
   dim: { color: colors.faint },
+  webError: { color: colors.danger, fontSize: 13, lineHeight: 19, paddingHorizontal: space.xs },
   cityChip: { paddingHorizontal: space.md, height: 34, justifyContent: 'center', borderRadius: radius.pill, backgroundColor: colors.surfaceMuted },
   cityChipOn: { backgroundColor: colors.accent },
   cityText: { fontSize: 13, fontWeight: '700', color: colors.muted },
   cityTextOn: { color: '#fff' },
   catChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: space.md, height: 34, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.card },
-  catChipOn: { backgroundColor: colors.navy, borderColor: colors.navy },
+  catChipOn: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
   catChipText: { fontSize: 13, fontWeight: '700', color: colors.ink },
 
   otherPanel: { gap: space.sm, padding: space.sm, borderRadius: radius.card, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
@@ -618,6 +854,24 @@ const styles = StyleSheet.create({
   catPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.md, paddingVertical: 9, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted },
   catPillText: { fontSize: 13, fontWeight: '700', color: colors.ink },
   hint: { fontSize: 12, color: colors.muted, lineHeight: 17 },
+  stepLabel: { fontSize: 13, fontWeight: '800', color: colors.accentDark, marginTop: space.xs },
+  geoRow: { flexDirection: 'row', gap: space.sm },
+  geoBtn: { width: 46, height: 46, borderRadius: radius.control, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
+  geoError: { fontSize: 13, fontWeight: '600', color: colors.danger, lineHeight: 18 },
+  geoItem: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 56, paddingVertical: 8, paddingHorizontal: space.sm, borderRadius: radius.control, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.card },
+  geoItemOn: { backgroundColor: colors.accentSoft },
+  geoPin: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  geoName: { fontSize: 15, fontWeight: '700', color: colors.ink },
+  geoAddr: { fontSize: 12, color: colors.muted, lineHeight: 17 },
+  chosenBox: { gap: 4, padding: space.md, borderRadius: radius.card, backgroundColor: colors.forestSoft },
+  chosenHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  chosenTitle: { fontSize: 14, fontWeight: '800', color: colors.forestInk },
+  chosenRetry: { fontSize: 13, fontWeight: '700', color: colors.accentDark },
+  chosenName: { fontSize: 16, fontWeight: '800', color: colors.ink, marginTop: 2 },
+  chosenCoord: { fontSize: 12, fontWeight: '600', color: colors.forestInk, fontVariant: ['tabular-nums'] },
+  mapBox: { height: 220, borderRadius: radius.control, overflow: 'hidden', marginTop: space.xs },
+  noLoc: { alignSelf: 'center', paddingVertical: space.sm },
+  noLocText: { fontSize: 13, fontWeight: '700', color: colors.muted, textDecorationLine: 'underline' },
   btnRow: { flexDirection: 'row', gap: space.sm, justifyContent: 'flex-end' },
   btnGhost: { paddingHorizontal: space.lg, height: 44, borderRadius: radius.control, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
   btnGhostText: { fontSize: 14, fontWeight: '700', color: colors.ink },

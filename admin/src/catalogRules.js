@@ -27,7 +27,7 @@ export function normalizeCatalogRow(input) {
   let country = String(input.country ?? '').trim();
   if (country && !/^[A-Za-z]{2}$/.test(country)) country = COUNTRY_BY_NAME[country] || country;
   country = country.toUpperCase();
-  if (!/^[A-Z]{2}$/.test(country)) errors.push('나라를 확인하세요 (예: ES, 스페인)');
+  if (!/^[A-Z]{2}$/.test(country)) errors.push('나라를 확인하세요 (예: JP, 일본)');
   else if (!COUNTRIES.some((c) => c.code === country)) errors.push(`알 수 없는 나라 코드: ${country}`);
 
   const name = String(input.name ?? '').trim();

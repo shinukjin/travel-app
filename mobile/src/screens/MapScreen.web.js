@@ -1,43 +1,54 @@
-import { useCallback, useEffect, useState } from 'react';
-import { MapSelectionBar } from '../components/MapSelectionBar';
+import { useEffect, useState } from 'react';
+import { MapEmptyHint } from '../components/MapEmptyHint';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
+import { useGuide } from '../GuideContext';
 import MapSheet from '../components/MapSheet';
+import { computeSnaps } from '../components/mapSheetSnap';
 import GoogleMap from '../components/GoogleMap.web';
 import { useMapExpand } from '../hooks/useMapExpand';
 import { colors } from '../theme';
 import { Icon } from '../ui';
-import { navigatePlaceInfo } from '../placeInfo';
-import { loadGuideCache } from '../sync';
 
 export default function MapScreen() {
   const navigation = useNavigation();
   const { mode, setMapMode, toggleList, onSnapMode } = useMapExpand(navigation);
-  const [days, setDays] = useState([]);
+  // 홈에서 선택한 여행의 일정만 보여 준다
+  const { days, tripId } = useGuide();
   const [dayIndex, setDayIndex] = useState(0);
   const [fitNonce, setFitNonce] = useState(0);
   const [frameHeight, setFrameHeight] = useState(0);
   const [selected, setSelected] = useState(null);
   const mapFirst = mode === 'peek';
 
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
-      (async () => {
-        const cache = await loadGuideCache();
-        const today = new Date().toISOString().slice(0, 10);
-        const allDays = cache.trips.flatMap((trip) => cache.schedules[trip.id] || []);
-        if (active) {
-          setDays(allDays);
-          const idx = allDays.findIndex((day) => day.date === today);
-          setDayIndex(idx >= 0 ? idx : 0);
-        }
-      })();
-      return () => {
-        active = false;
-      };
-    }, [])
-  );
+  // 여행이 바뀌면 오늘 날짜(없으면 1일차)로 맞춘다
+  useEffect(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const idx = days.findIndex((d) => d.date === today);
+    setDayIndex(idx >= 0 ? idx : 0);
+  }, [tripId]);
+
+  // 내 위치(GPS) — 브라우저 위치 권한을 허용하면 파란 점으로 표시
+  const [me, setMe] = useState(null);
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return undefined;
+    const id = navigator.geolocation.watchPosition(
+      (pos) => setMe({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, []);
+  const [focus, setFocus] = useState(null);
+  // 하단 목록이 지금 가리고 있는 높이 — 지도 가운데를 "보이는 영역" 기준으로 잡는 데 쓴다
+  const snaps = computeSnaps(frameHeight || 640, 0);
+  const covered = mode === 'peek' ? snaps.peek : mode === 'full' ? snaps.full : snaps.half;
+  const focusItem = (item) => {
+    // 일정지도에서는 장소 상세정보를 열지 않는다
+    if (item.place?.lat == null || item.place?.lng == null) return;
+    setSelected(item);
+    setFocus({ lat: item.place.lat, lng: item.place.lng, inset: covered, nonce: Date.now() });
+  };
 
   const day = days[dayIndex];
   const markers = (day?.items || []).filter((item) => item.place?.lat && item.place?.lng);
@@ -54,15 +65,11 @@ export default function MapScreen() {
         onRecenterRequest={() => setFitNonce((value) => value + 1)}
         selectedId={selected?.id}
         onMarkerPress={(item) => setSelected(item)}
+        me={me}
+        focus={focus}
+        inset={covered}
       />
-      <MapSelectionBar
-        item={selected}
-        onClose={() => setSelected(null)}
-        onInfo={(item) => {
-          setSelected(null);
-          navigatePlaceInfo(navigation, item.place, item.note);
-        }}
-      />
+      {!markers.length ? <MapEmptyHint key={day?.id || 'none'} noSchedule={!days.length} /> : null}
       <Pressable
         style={styles.fab}
         onPress={() => setMapMode(mapFirst ? 'half' : 'peek')}
@@ -76,13 +83,14 @@ export default function MapScreen() {
         days={days}
         dayIndex={dayIndex}
         markers={markers}
+        items={day?.items || []}
         mode={mode}
         frameHeight={frameHeight}
         onToggle={toggleList}
         onSnapMode={onSnapMode}
         onPrev={() => setDayIndex((value) => value - 1)}
         onNext={() => setDayIndex((value) => value + 1)}
-        onOpenPlace={(item) => navigatePlaceInfo(navigation, item.place, item.note)}
+        onOpenPlace={focusItem}
       />
     </View>
   );

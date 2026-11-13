@@ -144,64 +144,183 @@ export async function importPortablePlan(plan, { preferOnline = true } = {}) {
   return importPortablePlanOffline(plan);
 }
 
+/** 예전 방식(코드 붙여넣기) — 모든 항목을 새 여행으로 */
 async function importPortablePlanOnline(plan) {
-  const tripBody = {
-    title: plan.trip.title,
-    country: plan.trip.country || 'ES',
-    destination: plan.trip.destination || '',
-    startDate: plan.trip.startDate,
-    endDate: plan.trip.endDate
+  const { tripId } = await applyPlan(plan, { parts: ALL_PARTS, mode: 'new' });
+  return { tripId, mode: 'server' };
+}
+
+/* ---------- 가져오기 (링크·코드 공통) ---------- */
+
+/** 가져올 수 있는 항목 */
+export const PLAN_PARTS = [
+  { id: 'schedule', label: '일정', unit: '곳' },
+  { id: 'packing', label: '준비물', unit: '개' },
+  { id: 'vouchers', label: '티켓·바우처', unit: '개' },
+  { id: 'phrases', label: '회화', unit: '개' }
+];
+export const ALL_PARTS = { schedule: true, packing: true, vouchers: true, phrases: true };
+
+/** 계획 안의 항목별 개수 — 가져오기 화면에서 어떤 항목이 들어 있는지 보여 준다 */
+export function planCounts(plan) {
+  return {
+    schedule: (plan?.days || []).reduce((n, d) => n + (d.items || []).filter((i) => i.place).length, 0),
+    packing: plan?.packing?.length || 0,
+    vouchers: plan?.vouchers?.length || 0,
+    phrases: plan?.phrases?.length || 0
   };
-  const created = await api.createTrip(tripBody);
-  const tripId = created.id;
+}
+
+/**
+ * 가져오기 방식
+ *  new     새 여행으로 추가
+ *  merge   내 여행에 합치기 — 이미 있는 장소·항목은 건너뛰고 없는 것만 더한다
+ *  replace 내 여행에 덮어쓰기 — 선택한 항목의 기존 내용을 지우고 받은 내용으로 바꾼다
+ */
+export const APPLY_MODES = [
+  { id: 'new', label: '새 여행으로 추가', hint: '내 여행은 그대로 두고, 받은 내용으로 새 여행을 만들어요.' },
+  { id: 'merge', label: '내 여행에 합치기', hint: '이미 있는 것은 건너뛰고, 없는 것만 더해요.' },
+  { id: 'replace', label: '내 여행에 덮어쓰기', hint: '선택한 항목의 기존 내용을 지우고 받은 내용으로 바꿔요.' }
+];
+
+const sameText = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+
+async function applySchedule(plan, tripId, mode, report) {
   const schedules = await api.schedules(tripId);
   const catalog = await api.places();
+  const planDays = plan.days || [];
 
-  for (const day of plan.days || []) {
-    const schedule = schedules.find((s) => s.date === day.date) || schedules.find((s) => s.dayIndex === day.dayIndex);
-    if (!schedule) continue;
-    const items = [];
+  for (const schedule of schedules) {
+    // 날짜가 달라도 "n일차"끼리 맞춘다
+    const day = planDays.find((d) => d.dayIndex === schedule.dayIndex);
+    const existing = (schedule.items || []).filter((i) => i.place?.id).map((i) => ({ placeId: i.place.id, startTime: i.startTime, note: i.note || '' }));
+
+    if (!day) {
+      // 받은 계획에 없는 날 — 덮어쓰기일 때만 비운다
+      if (mode === 'replace' && existing.length) {
+        await api.replaceScheduleItems(schedule.id, []);
+        report.removed.schedule += existing.length;
+      }
+      continue;
+    }
+
+    const incoming = [];
     for (const row of day.items || []) {
       if (!row.place) continue;
-      const placeId = await resolvePlaceId(row.place, catalog);
-      items.push({
-        placeId,
-        sortOrder: row.sortOrder ?? items.length,
+      incoming.push({
+        placeId: await resolvePlaceId(row.place, catalog),
         startTime: normalizeTime(row.startTime),
         note: row.note || ''
       });
     }
-    if (items.length) {
-      await api.replaceScheduleItems(schedule.id, items);
-    }
-  }
 
-  for (const row of plan.vouchers || []) {
-    await api.createVoucher({ tripId, title: row.title, type: row.type, body: row.body || '' });
+    let items = incoming;
+    if (mode === 'merge') {
+      const have = new Set(existing.map((i) => i.placeId));
+      const fresh = incoming.filter((i) => !have.has(i.placeId));
+      report.skipped.schedule += incoming.length - fresh.length;
+      items = [...existing, ...fresh];
+      report.added.schedule += fresh.length;
+    } else {
+      if (mode === 'replace') report.removed.schedule += existing.length;
+      report.added.schedule += incoming.length;
+    }
+    if (items.length || mode === 'replace') await api.replaceScheduleItems(schedule.id, items);
   }
-  for (const row of plan.phrases || []) {
-    await api.createPhrase({
-      tripId,
-      situation: row.situation,
-      ko: row.ko,
-      localText: row.localText,
-      locale: row.locale || 'es-ES'
+  // 내 여행이 받은 계획보다 짧으면 넘치는 날은 건너뛴다
+  report.skippedDays = planDays.filter((d) => !schedules.some((s) => s.dayIndex === d.dayIndex)).length;
+}
+
+/** 티켓·회화·준비물처럼 목록형 항목 하나를 가져온다 */
+async function applyList({ mode, key, rows, load, remove, create, same, report }) {
+  let existing = [];
+  if (mode !== 'new') existing = await load();
+  if (mode === 'replace') {
+    for (const row of existing) await remove(row.id);
+    report.removed[key] += existing.length;
+    existing = [];
+  }
+  for (const row of rows) {
+    if (mode === 'merge' && existing.some((e) => same(e, row))) {
+      report.skipped[key] += 1;
+      continue;
+    }
+    await create(row);
+    report.added[key] += 1;
+  }
+}
+
+/**
+ * 받은 계획을 적용한다.
+ * parts: { schedule, packing, vouchers, phrases } 중 가져올 것만 true
+ * mode: 'new' | 'merge' | 'replace' (merge·replace 는 targetTripId 필요)
+ * 돌려주는 report 로 "무엇을 몇 개 더했고, 건너뛰었고, 지웠는지" 알려 줄 수 있다.
+ */
+export async function applyPlan(plan, { parts = ALL_PARTS, mode = 'new', targetTripId = null } = {}) {
+  if (!plan || plan.kind !== PLAN_KIND) throw new Error('올바른 여행 계획이 아닙니다.');
+  const zero = () => ({ schedule: 0, packing: 0, vouchers: 0, phrases: 0 });
+  const report = { added: zero(), skipped: zero(), removed: zero(), skippedDays: 0 };
+
+  let tripId = targetTripId;
+  if (mode === 'new') {
+    const created = await api.createTrip({
+      title: plan.trip.title,
+      country: plan.trip.country,
+      destination: plan.trip.destination || '',
+      startDate: plan.trip.startDate,
+      endDate: plan.trip.endDate
+    });
+    tripId = created.id;
+  }
+  if (!tripId) throw new Error('적용할 여행을 선택해 주세요.');
+
+  if (parts.schedule) await applySchedule(plan, tripId, mode, report);
+
+  if (parts.vouchers) {
+    await applyList({
+      mode, key: 'vouchers', rows: plan.vouchers || [], report,
+      load: () => api.vouchers(tripId),
+      remove: (id) => api.deleteVoucher(id),
+      create: (row) => api.createVoucher({ tripId, title: row.title, type: row.type, body: row.body || '' }),
+      same: (e, row) => sameText(e.title, row.title)
     });
   }
-  for (const row of plan.packing || []) {
-    await api.createPacking({
-      tripId,
-      name: row.name,
-      category: row.category || 'OTHER',
-      quantity: row.quantity ?? 1,
-      note: row.note || '',
-      packed: !!row.packed,
-      sortOrder: row.sortOrder ?? 0
+  if (parts.phrases) {
+    await applyList({
+      mode, key: 'phrases', rows: plan.phrases || [], report,
+      load: () => api.phrases(tripId),
+      remove: (id) => api.deletePhrase(id),
+      create: (row) => api.createPhrase({ tripId, situation: row.situation, ko: row.ko, localText: row.localText, locale: row.locale || 'en-US' }),
+      same: (e, row) => sameText(e.localText, row.localText)
+    });
+  }
+  if (parts.packing) {
+    await applyList({
+      mode, key: 'packing', rows: plan.packing || [], report,
+      load: () => api.packing(tripId),
+      remove: (id) => api.deletePacking(id),
+      // 받은 사람의 짐은 아직 안 쌌으니 체크 표시는 가져오지 않는다
+      create: (row) => api.createPacking({ tripId, name: row.name, category: row.category || 'OTHER', quantity: row.quantity ?? 1, note: row.note || '', packed: false, sortOrder: row.sortOrder ?? 0 }),
+      same: (e, row) => sameText(e.name, row.name)
     });
   }
 
   await refreshGuideCache();
-  return { tripId, mode: 'server' };
+  return { tripId, report };
+}
+
+/** 적용 결과를 한 줄로 — "일정 5곳 추가 · 준비물 3개 건너뜀" */
+export function reportText(report) {
+  const names = { schedule: ['일정', '곳'], packing: ['준비물', '개'], vouchers: ['티켓', '개'], phrases: ['회화', '개'] };
+  const parts = [];
+  for (const key of Object.keys(names)) {
+    const [label, unit] = names[key];
+    if (report.added[key]) parts.push(`${label} ${report.added[key]}${unit} 추가`);
+    if (report.removed[key]) parts.push(`${label} ${report.removed[key]}${unit} 교체`);
+    if (report.skipped[key]) parts.push(`${label} ${report.skipped[key]}${unit} 건너뜀`);
+  }
+  if (report.skippedDays) parts.push(`${report.skippedDays}일 분량은 내 여행에 날이 없어 건너뜀`);
+  return parts.join(' · ') || '바뀐 내용이 없어요';
 }
 
 async function importPortablePlanOffline(plan) {
@@ -209,7 +328,7 @@ async function importPortablePlanOffline(plan) {
   const trip = {
     id: tripId,
     title: plan.trip.title,
-    country: plan.trip.country || 'ES',
+    country: plan.trip.country || '',
     destination: plan.trip.destination || '',
     startDate: plan.trip.startDate,
     endDate: plan.trip.endDate,

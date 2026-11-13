@@ -16,8 +16,12 @@ export const colors = {
   navy: '#10263F',
   tram: '#F2B33D',
   tramSoft: '#FCEFD2',
+  /** 트램 옐로 위에 올리는 글씨 — 남색 대신 짙은 호박색 (대비 약 7:1) */
+  tramInk: '#4A3300',
   forest: '#2F8F6B',
   forestSoft: '#D9F0E6',
+  /** 연한 민트 배경 위 글씨 — 대비 약 7:1 */
+  forestInk: '#1B5B43',
   sand: '#F1F5F9',
   line: '#DCE4EC',
   lineHair: 'rgba(16, 38, 63, 0.08)',

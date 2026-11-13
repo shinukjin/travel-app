@@ -11,7 +11,7 @@
     <p v-if="mustChangePassword" class="login-warn">
       <strong>새 비밀번호를 정해 주세요.</strong> 운영자가 발급한 임시 비밀번호로 로그인하셨어요. 바꾸기 전에는 다른 화면을 이용할 수 없어요.
     </p>
-    <p v-if="done" class="flash">비밀번호를 변경했습니다.</p>
+    <p v-if="done" class="flash" role="status">비밀번호를 변경했습니다.</p>
 
     <form class="panel pw-card" @submit.prevent="submit">
       <div class="form-row">

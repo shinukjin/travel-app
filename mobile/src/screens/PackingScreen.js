@@ -5,7 +5,8 @@ import { useGuide } from '../GuideContext';
 import { StackPage } from '../components/StackPage';
 import { api } from '../api';
 import { colors, packingMeta, radius, space } from '../theme';
-import { Icon, TripPicker } from '../ui';
+import { Icon, TripLabel } from '../ui';
+import { useToast } from '../Toast';
 
 /** 해외여행 기본 준비물 — 이미 있는 이름은 건너뛰고 추가한다 */
 const TEMPLATE = [
@@ -14,7 +15,7 @@ const TEMPLATE = [
   ['DOCS', '여행자 보험 증서'],
   ['DOCS', '숙소·티켓 바우처'],
   ['DOCS', '신용·체크카드'],
-  ['DOCS', '현금(유로)'],
+  ['DOCS', '현금(현지 통화)'],
   ['GEAR', '휴대폰 충전기'],
   ['GEAR', '멀티 어댑터'],
   ['GEAR', '보조배터리'],
@@ -33,6 +34,7 @@ const TEMPLATE = [
 ];
 
 export default function PackingScreen({ embed }) {
+  const toast = useToast();
   const { trip, trips, tripId, packing, loading, selectTrip, setPackingForTrip } = useGuide();
   const [name, setName] = useState('');
   const [category, setCategory] = useState('DOCS');
@@ -96,6 +98,7 @@ export default function PackingScreen({ embed }) {
       });
       setPackingForTrip([...packing, created]);
       setName('');
+      toast.show('준비물을 추가했어요');
     } catch (error) {
       Alert.alert('저장 실패', error.message);
     }
@@ -160,7 +163,7 @@ export default function PackingScreen({ embed }) {
 
   return (
     <StackPage title="준비" contentStyle={styles.body} embed={embed}>
-      {trips.length > 1 ? <TripPicker trips={trips} tripId={tripId} onSelect={selectTrip} /> : null}
+      <TripLabel trip={trip} />
 
       <View style={styles.summary}>
         <View style={styles.summaryTop}>
@@ -186,7 +189,7 @@ export default function PackingScreen({ embed }) {
             </Pressable>
           </View>
           <Pressable onPress={() => setManage((v) => !v)} style={[styles.manageBtn, manage && styles.manageOn]} accessibilityRole="button" accessibilityState={{ selected: manage }}>
-            <Icon name="options-outline" size={15} color={manage ? '#fff' : colors.ink} />
+            <Icon name="options-outline" size={15} color={colors.forestInk} />
             <Text style={[styles.manageText, manage && styles.manageTextOn]}>{manage ? '완료' : '정리'}</Text>
           </Pressable>
         </View>
@@ -212,7 +215,7 @@ export default function PackingScreen({ embed }) {
             const on = id === category;
             return (
               <Pressable key={id} onPress={() => setCategory(id)} style={[styles.cat, on && styles.catOn]} accessibilityState={{ selected: on }}>
-                <Icon name={meta.icon} size={14} color={on ? '#fff' : colors.muted} />
+                <Icon name={meta.icon} size={14} color={on ? colors.forestInk : colors.muted} />
                 <Text style={[styles.catText, on && styles.catTextOn]}>{meta.label}</Text>
               </Pressable>
             );
@@ -233,10 +236,11 @@ export default function PackingScreen({ embed }) {
       ) : null}
 
       {groups.map(({ id, meta, rows, done, count }) => {
-        const closed = !!collapsed[id];
+        // 다 챙긴 분류는 처음부터 접어 두고, 눌러서 다시 펼 수 있다
+        const closed = collapsed[id] ?? (count > 0 && done === count && !openOnly);
         return (
           <View key={id} style={styles.group}>
-            <Pressable style={styles.groupHead} onPress={() => setCollapsed((c) => ({ ...c, [id]: !c[id] }))} accessibilityRole="button">
+            <Pressable style={styles.groupHead} onPress={() => setCollapsed((c) => ({ ...c, [id]: !closed }))} accessibilityRole="button" accessibilityState={{ expanded: !closed }}>
               <View style={styles.groupIcon}>
                 <Icon name={meta.icon} size={16} color={colors.accentDark} />
               </View>
@@ -258,7 +262,7 @@ export default function PackingScreen({ embed }) {
                     accessibilityState={{ checked: !!item.packed }}
                   >
                     <View style={[styles.check, item.packed && styles.checkOn]}>
-                      {item.packed ? <Icon name="checkmark" size={15} color="#fff" /> : null}
+                      {item.packed ? <Icon name="checkmark" size={13} color="#fff" /> : null}
                     </View>
                     <Text style={[styles.itemName, item.packed && styles.itemDone]} numberOfLines={1}>
                       {item.name}
@@ -304,55 +308,57 @@ export default function PackingScreen({ embed }) {
 }
 
 const styles = StyleSheet.create({
-  body: { gap: space.lg },
+  body: { gap: space.md },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.bg },
   disabled: { opacity: 0.4 },
-  summary: { gap: space.md, padding: space.lg, borderRadius: radius.sheet, backgroundColor: colors.navy },
-  summaryTop: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
-  summaryLabel: { fontSize: 13, fontWeight: '700', color: 'rgba(255,255,255,0.65)' },
-  summaryCount: { fontSize: 34, fontWeight: '800', color: '#fff', letterSpacing: -1 },
-  summaryTotal: { fontSize: 18, fontWeight: '600', color: 'rgba(255,255,255,0.6)' },
-  percent: { fontSize: 22, fontWeight: '800', color: colors.tram },
-  track: { height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.18)', overflow: 'hidden' },
-  fill: { height: '100%', backgroundColor: colors.tram, borderRadius: 4 },
-  fillDone: { backgroundColor: '#5ED3A2' },
+  // 요약 — 작은 숫자 한 줄 + 진행 막대 + 보기 전환
+  // 요약 — 연한 민트 바탕 + 같은 계열의 진한 글씨 (꽉 찬 색 대신)
+  summary: { gap: space.sm, padding: space.md, paddingHorizontal: space.lg, borderRadius: radius.card, backgroundColor: colors.forestSoft },
+  summaryTop: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
+  summaryLabel: { fontSize: 12, fontWeight: '700', color: colors.forestInk },
+  summaryCount: { fontSize: 22, fontWeight: '800', color: colors.forestInk, letterSpacing: -0.5 },
+  summaryTotal: { fontSize: 14, fontWeight: '600', color: colors.forestInk },
+  percent: { fontSize: 16, fontWeight: '800', color: colors.forestInk },
+  track: { height: 6, borderRadius: 3, backgroundColor: 'rgba(47,143,107,0.22)', overflow: 'hidden' },
+  fill: { height: '100%', backgroundColor: colors.forest, borderRadius: 3 },
+  fillDone: { backgroundColor: colors.forest },
   summaryBottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  seg: { flexDirection: 'row', padding: 3, borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.12)' },
-  segItem: { paddingHorizontal: space.md, paddingVertical: 7, borderRadius: radius.pill },
+  seg: { flexDirection: 'row', padding: 2, borderRadius: radius.pill, backgroundColor: 'rgba(47,143,107,0.14)' },
+  segItem: { paddingHorizontal: space.md, paddingVertical: 5, borderRadius: radius.pill },
   segOn: { backgroundColor: '#fff' },
-  segText: { fontSize: 13, fontWeight: '700', color: 'rgba(255,255,255,0.75)' },
-  segTextOn: { color: colors.navy },
-  manageBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.md, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: '#fff' },
-  manageOn: { backgroundColor: colors.tram },
-  manageText: { fontSize: 13, fontWeight: '700', color: colors.navy },
-  manageTextOn: { color: colors.navy },
-  addCard: { gap: space.md, padding: space.md, borderRadius: radius.sheet, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
+  segText: { fontSize: 12, fontWeight: '700', color: colors.forestInk },
+  segTextOn: { color: colors.forestInk },
+  manageBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: space.md, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: '#fff' },
+  manageOn: { backgroundColor: '#B7E0CE' },
+  manageText: { fontSize: 12, fontWeight: '700', color: colors.forestInk },
+  manageTextOn: { color: colors.forestInk },
+  addCard: { gap: space.sm, padding: space.sm, borderRadius: radius.card, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
   addRow: { flexDirection: 'row', gap: space.sm },
-  addInput: { flex: 1, height: 48, paddingHorizontal: space.md, borderRadius: radius.control, backgroundColor: colors.surfaceMuted, fontSize: 16, color: colors.ink },
-  addBtn: { width: 48, height: 48, borderRadius: radius.control, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
-  cats: { gap: space.sm, paddingRight: space.md },
-  cat: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: space.md, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted },
-  catOn: { backgroundColor: colors.navy },
-  catText: { fontSize: 13, fontWeight: '700', color: colors.muted },
-  catTextOn: { color: '#fff' },
+  addInput: { flex: 1, height: 42, paddingHorizontal: space.md, borderRadius: radius.control, backgroundColor: colors.surfaceMuted, fontSize: 14, color: colors.ink },
+  addBtn: { width: 42, height: 42, borderRadius: radius.control, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
+  cats: { gap: 6, paddingRight: space.md },
+  cat: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted },
+  catOn: { backgroundColor: '#CBEADB' },
+  catText: { fontSize: 12, fontWeight: '700', color: colors.muted },
+  catTextOn: { color: colors.forestInk },
   emptyCard: { alignItems: 'center', gap: space.sm, padding: space.xl, borderRadius: radius.sheet, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
-  emptyTitle: { fontSize: 18, fontWeight: '800', color: colors.ink, textAlign: 'center' },
-  emptyText: { fontSize: 14, color: colors.muted, textAlign: 'center', lineHeight: 20 },
-  fillBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: space.sm, paddingHorizontal: space.xl, height: 48, borderRadius: radius.pill, backgroundColor: colors.accent },
-  fillBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
-  group: { borderRadius: radius.sheet, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, overflow: 'hidden' },
-  groupHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.md, paddingHorizontal: space.lg },
-  groupIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
-  groupTitle: { flex: 1, fontSize: 16, fontWeight: '800', color: colors.ink },
-  groupCount: { fontSize: 13, fontWeight: '700', color: colors.muted },
+  emptyTitle: { fontSize: 16, fontWeight: '800', color: colors.ink, textAlign: 'center' },
+  emptyText: { fontSize: 13, color: colors.muted, textAlign: 'center', lineHeight: 19 },
+  fillBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: space.sm, paddingHorizontal: space.xl, height: 44, borderRadius: radius.pill, backgroundColor: colors.accent },
+  fillBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  group: { borderRadius: radius.card, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, overflow: 'hidden' },
+  groupHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: 10, paddingHorizontal: space.lg },
+  groupIcon: { width: 28, height: 28, borderRadius: 9, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  groupTitle: { flex: 1, fontSize: 14, fontWeight: '800', color: colors.ink },
+  groupCount: { fontSize: 12, fontWeight: '700', color: colors.muted },
   groupCountDone: { color: colors.forest },
-  row: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: 14, paddingHorizontal: space.lg, borderTopWidth: 1, borderTopColor: colors.line },
+  row: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 44, paddingVertical: 8, paddingHorizontal: space.lg, borderTopWidth: 1, borderTopColor: colors.lineHair },
   rowPressed: { backgroundColor: colors.surfaceTint },
-  check: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
+  check: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: colors.faint, alignItems: 'center', justifyContent: 'center' },
   checkOn: { backgroundColor: colors.forest, borderColor: colors.forest },
-  itemName: { flex: 1, fontSize: 16, fontWeight: '600', color: colors.ink },
+  itemName: { flex: 1, fontSize: 14, fontWeight: '600', color: colors.ink },
   itemDone: { color: colors.faint, textDecorationLine: 'line-through', fontWeight: '500' },
-  qtyBadge: { fontSize: 13, fontWeight: '700', color: colors.muted },
+  qtyBadge: { fontSize: 12, fontWeight: '700', color: colors.muted },
   manageRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   qtyBtn: { width: 30, height: 30, borderRadius: 9, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
   qty: { minWidth: 18, textAlign: 'center', fontSize: 15, fontWeight: '800', color: colors.ink },

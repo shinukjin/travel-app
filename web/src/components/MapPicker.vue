@@ -1,9 +1,14 @@
 <template>
   <div class="map-picker">
     <div class="map-search">
+      <!-- 모바일처럼 나라를 골라 그 나라 안에서 찾을 수 있다 (비우면 전 세계) -->
+      <select v-model="searchCountry" class="map-country" aria-label="검색할 나라">
+        <option value="">🌍 전체 나라</option>
+        <option v-for="c in countryOptions" :key="c.code" :value="c.code">{{ countryFlag(c.code) }} {{ c.name }}</option>
+      </select>
       <input
         v-model="q"
-        placeholder="장소 검색 (사그라다 파밀리아, Plaza de España…)"
+        placeholder="장소 이름이나 주소 (예: 센소지, Eiffel Tower)"
         @keydown.enter.prevent="search"
       />
       <button type="button" class="ghost sm" @click="search" :disabled="searching">
@@ -30,12 +35,23 @@
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { hitToPlace, reverseGeocode, searchPlaces } from '../geocode';
+import { COUNTRIES, countryFlag, parseCountries } from '../countries';
 
 const props = defineProps({
   lat: { type: Number, default: null },
   lng: { type: Number, default: null },
-  centerQuery: { type: String, default: '' }
+  centerQuery: { type: String, default: '' },
+  /** 이 여행의 나라 코드 (예: "JP" 또는 "ES,PT") — 목록 맨 위에 두고 처음 선택해 둔다 */
+  country: { type: String, default: '' }
 });
+
+const tripCodes = parseCountries(props.country);
+const searchCountry = ref(tripCodes.length === 1 ? tripCodes[0] : '');
+/** 여행 나라를 먼저, 나머지 모든 나라를 뒤에 */
+const countryOptions = [
+  ...tripCodes.map((code) => COUNTRIES.find((c) => c.code === code)).filter(Boolean),
+  ...COUNTRIES.filter((c) => !tripCodes.includes(c.code))
+];
 
 const emit = defineEmits(['update:lat', 'update:lng', 'picked']);
 
@@ -74,7 +90,9 @@ async function search() {
   error.value = '';
   searching.value = true;
   try {
-    hits.value = await searchPlaces(q.value);
+    // 지도를 어느 정도 확대해 둔 상태라면 그 근처를 우선해서 찾는다
+    const c = map && map.getZoom() >= 10 ? map.getCenter() : null;
+    hits.value = await searchPlaces(q.value, c ? { lat: c.lat, lng: c.lng } : null, searchCountry.value);
     if (!hits.value.length) error.value = '검색 결과가 없습니다.';
   } catch (err) {
     error.value = err.message;
@@ -114,9 +132,10 @@ onMounted(async () => {
     Lref = await loadLeaflet();
     Lref.Icon.Default.imagePath = 'https://unpkg.com/leaflet@1.9.4/dist/images/';
     await nextTick();
-    const startLat = props.lat || 41.3874;
-    const startLng = props.lng || 2.1686;
-    map = Lref.map(mapEl.value, { scrollWheelZoom: true }).setView([startLat, startLng], props.lat ? 16 : 12);
+    // 좌표가 없으면 어느 나라 여행이든 어색하지 않게 세계 지도로 시작 (검색하면 그곳으로 이동)
+    const startLat = props.lat || 25;
+    const startLng = props.lng || 20;
+    map = Lref.map(mapEl.value, { scrollWheelZoom: true }).setView([startLat, startLng], props.lat ? 16 : 2);
     Lref.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap'
@@ -139,8 +158,8 @@ onMounted(async () => {
     if (mapEl.value) resizeObserver.observe(mapEl.value);
     setTimeout(() => map.invalidateSize(), 160);
     if (!props.lat && props.centerQuery) {
-      const found = await searchPlaces(props.centerQuery);
-      if (found[0]) map.setView([Number(found[0].lat), Number(found[0].lon)], 13);
+      const found = await searchPlaces(props.centerQuery, null, searchCountry.value);
+      if (found[0]) map.setView([Number(found[0].lat), Number(found[0].lon)], 12);
     }
   } catch (err) {
     error.value = err.message;

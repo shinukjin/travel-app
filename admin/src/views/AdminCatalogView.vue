@@ -13,7 +13,7 @@
       </div>
     </div>
 
-    <p v-if="flash" class="flash">{{ flash }}</p>
+    <p v-if="flash" :key="flash" class="flash" role="status">{{ flash }}</p>
     <p v-if="error" class="login-error">{{ error }}</p>
 
     <!-- 나라별 현황 -->
@@ -168,7 +168,7 @@
           <div class="ud-summary">
             <strong>1. 양식 받기 → 2. 채우기 → 3. 파일 선택</strong>
             <p class="muted">필수 열: <code>country, name, category, lat, lng</code> · 선택: <code>city, name_local, address, memo</code><br />
-              나라는 코드(ES) 또는 한글(스페인), 분류는 관광/맛집/숙소/교통으로 적어요. 이미 등록된 항목(나라·도시·이름이 같음)은 건너뜁니다.</p>
+              나라는 코드(JP) 또는 한글(일본), 분류는 관광/맛집/숙소/교통으로 적어요. 이미 등록된 항목(나라·도시·이름이 같음)은 건너뜁니다.</p>
             <div class="actions">
               <button type="button" class="ghost" @click="downloadTemplate">양식 받기</button>
               <label class="file-btn">
@@ -278,6 +278,12 @@ function togglePage() {
 const busy = ref(false);
 const error = ref('');
 const flash = ref('');
+// 안내 문구는 3초 뒤 비워서, 같은 문구가 다시 나와도 새로 보이게 한다
+let flashTimer;
+watch(flash, (value) => {
+  clearTimeout(flashTimer);
+  if (value) flashTimer = setTimeout(() => { flash.value = ''; }, 3200);
+});
 const pages = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)));
 const totalAll = computed(() => countryCounts.value.reduce((s, c) => s + c.count, 0));
 let timer = null;

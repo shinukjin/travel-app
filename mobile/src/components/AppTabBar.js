@@ -11,7 +11,8 @@ function TabButton({ route, index, focused, descriptors, navigation, distribute 
   const { options } = descriptors[route.key];
   const label = options.tabBarLabel ?? options.title ?? route.name;
   const pair = MAIN_TAB_ICONS[route.name] || ['ellipse-outline', 'ellipse'];
-  const color = focused ? colors.accent : colors.faint;
+  // 선택 안 된 탭도 흰 배경에서 충분히 읽히도록 faint 대신 muted
+  const color = focused ? colors.accent : colors.muted;
 
   const onPress = () => {
     const event = navigation.emit({
@@ -104,5 +105,5 @@ const styles = StyleSheet.create({
   iconPill: { width: 56, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   iconPillOn: { backgroundColor: colors.accentSoft },
   tabDistribute: { flex: 1 },
-  label: { fontSize: 11, fontWeight: '700' }
+  label: { fontSize: 12, fontWeight: '700' }
 });

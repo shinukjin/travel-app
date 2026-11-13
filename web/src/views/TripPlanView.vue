@@ -17,7 +17,7 @@
         <button type="button" class="ghost" @click="openMeta = true">기본 정보</button>
       </div>
     </div>
-    <p v-if="status" class="flash">{{ status }}</p>
+    <p v-if="status" :key="status" class="flash" role="status">{{ status }}</p>
 
     <div class="tabs">
       <button type="button" :class="{ active: tab === 'overview' }" @click="tab = 'overview'">전체 일정</button>
@@ -243,7 +243,7 @@
         </div>
         <div class="form-row">
           <label>도시·지역</label>
-          <input v-model="meta.destination" placeholder="예: 바르셀로나, 세비야" />
+          <input v-model="meta.destination" placeholder="예: 도시나 지역 이름 (여러 곳은 쉼표로)" />
         </div>
         <div class="form-row"><label>시작일</label><input v-model="meta.startDate" type="date" required /></div>
         <div class="form-row"><label>종료일</label><input v-model="meta.endDate" type="date" required /></div>
@@ -305,6 +305,7 @@
       <MapPicker
         :lat="placeForm.lat"
         :lng="placeForm.lng"
+        :country="trip?.country || ''"
         :center-query="placeForm.name || placeForm.address || trip?.destination"
         @update:lat="placeForm.lat = $event"
         @update:lng="placeForm.lng = $event"
@@ -342,6 +343,12 @@ const packingItems = ref([]);
 const selectedDayId = ref(0);
 const tab = ref('overview');
 const status = ref('');
+// 안내 문구는 3초 뒤 비워서, 같은 문구가 다시 나와도 새로 보이게 한다
+let statusTimer;
+watch(status, (value) => {
+  clearTimeout(statusTimer);
+  if (value) statusTimer = setTimeout(() => { status.value = ''; }, 3200);
+});
 const placeQuery = ref('');
 const openMeta = ref(false);
 const voucherOpen = ref(false);
@@ -353,10 +360,10 @@ const ownedCatalogIds = computed(() => places.value.map((x) => x.catalogId).filt
 async function reloadPlaces() {
   places.value = await api.places.list();
 }
-const meta = reactive({ title: '', destination: '', country: 'ES', startDate: '', endDate: '' });
+const meta = reactive({ title: '', destination: '', country: '', startDate: '', endDate: '' });
 const placeForm = reactive({ name: '', category: 'SIGHT', address: '', lat: null, lng: null });
 const voucherForm = reactive({ title: '', type: 'FLIGHT', body: '' });
-const phraseForm = reactive({ situation: '', ko: '', localText: '', locale: 'es-ES' });
+const phraseForm = reactive({ situation: '', ko: '', localText: '', locale: '' });
 const packingForm = reactive({ name: '', category: 'DOCS', quantity: 1, note: '' });
 const packingQuery = ref('');
 const packingPacked = ref('ALL');

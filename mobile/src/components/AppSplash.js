@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Image, Platform, StyleSheet, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { Text } from '../Text';
 import { colors } from '../theme';
+import { APP_VERSION_LABEL } from '../appVersion';
 
 const LOGO = require('../../assets/logo.png');
 const LOGO_SIZE = 184;
@@ -16,6 +18,7 @@ let shownOnce = false;
 export function SplashBase() {
   return (
     <View style={styles.root}>
+      <StatusBar style="light" />
       <Image source={LOGO} style={styles.logo} />
     </View>
   );
@@ -84,6 +87,7 @@ export function AppSplash({ ready }) {
 
   return (
     <Animated.View style={[styles.root, styles.overlay, { opacity: fade }]} pointerEvents={ready && elapsed ? 'none' : 'auto'}>
+      <StatusBar style="light" />
       <Animated.View
         style={{
           transform: [
@@ -108,6 +112,7 @@ export function AppSplash({ ready }) {
         </View>
         <Text style={styles.loadingText}>여행을 준비하고 있어요</Text>
       </View>
+      <Text style={styles.version}>{APP_VERSION_LABEL}</Text>
     </Animated.View>
   );
 }
@@ -122,5 +127,6 @@ const styles = StyleSheet.create({
   loading: { position: 'absolute', bottom: 72, alignItems: 'center', gap: 12 },
   dots: { flexDirection: 'row', gap: 8, height: 14, alignItems: 'center' },
   dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.tram },
-  loadingText: { fontSize: 13, fontWeight: '500', color: 'rgba(255,255,255,0.55)' }
+  loadingText: { fontSize: 13, fontWeight: '500', color: 'rgba(255,255,255,0.55)' },
+  version: { position: 'absolute', bottom: 28, fontSize: 12, fontWeight: '500', color: 'rgba(255,255,255,0.4)' }
 });

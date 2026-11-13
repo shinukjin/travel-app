@@ -29,7 +29,7 @@ export function MapHubMenuBadge({ section, onSectionChange }) {
               accessibilityState={{ selected: on }}
               accessibilityLabel={opt.label}
             >
-              <Icon name={on ? opt.icon[1] : opt.icon[0]} size={16} color={on ? '#fff' : colors.muted} />
+              <Icon name={on ? opt.icon[1] : opt.icon[0]} size={16} color={on ? colors.accentDark : colors.muted} />
               <Text style={[styles.label, on && styles.labelOn]}>{opt.label}</Text>
             </Pressable>
           );
@@ -59,7 +59,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: radius.pill
   },
-  segOn: { backgroundColor: colors.navy },
+  segOn: { backgroundColor: colors.accentSoft },
   label: { fontSize: 13, fontWeight: '700', color: colors.muted },
-  labelOn: { color: '#fff' }
+  labelOn: { color: colors.accentDark }
 });

@@ -44,7 +44,7 @@ import { countryFlag, findCountry, searchCountries } from '../countries';
 const props = defineProps({
   modelValue: { type: String, default: '' },
   id: { type: String, default: undefined },
-  placeholder: { type: String, default: '나라 검색 (예: 스페인, ES)' }
+  placeholder: { type: String, default: '나라 검색 (예: 일본, JP)' }
 });
 const emit = defineEmits(['update:modelValue']);
 

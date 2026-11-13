@@ -1,11 +1,16 @@
-import { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text, TextInput } from '../Text';
 import { useFocusEffect } from '@react-navigation/native';
 import { StackPage } from '../components/StackPage';
+import { useGuide } from '../GuideContext';
+import { currenciesForTrip, currencyName } from '../countryInfo';
 import {
   convertAmount,
+  formatAmount,
   formatNumberInput,
+  hasRate,
+  krwPer,
   loadFxRates,
   parseNumberInput,
   refreshFxRates,
@@ -14,28 +19,38 @@ import {
 import { colors, radius, shadow, space, type } from '../theme';
 import { Icon } from '../ui';
 
-const CURRENCIES = ['KRW', 'EUR', 'USD'];
-const CURRENCY_NAMES = { KRW: '원', EUR: '유로', USD: '달러' };
-const CURRENCY_SYMBOLS = { KRW: '₩', EUR: '€', USD: '$' };
-
 export default function ExchangeScreen({ embed }) {
+  const { trip } = useGuide();
   const [rates, setRates] = useState(null);
-  const [from, setFrom] = useState('EUR');
+  const [fromPick, setFromPick] = useState(null);
   const [amount, setAmount] = useState('10');
   const [loading, setLoading] = useState(true);
   const [stale, setStale] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [notice, setNotice] = useState('');
   const [editing, setEditing] = useState(false);
-  const [eurInput, setEurInput] = useState('');
-  const [usdInput, setUsdInput] = useState('');
+  const [inputs, setInputs] = useState({});
+
+  // 안내 문구는 잠깐 보여 준 뒤 저절로 사라지게 한다
+  useEffect(() => {
+    if (!notice) return undefined;
+    const t = setTimeout(() => setNotice(''), 3000);
+    return () => clearTimeout(t);
+  }, [notice]);
+
+  /** 여행 국가의 현지 통화 → 원·달러와 함께 보여 줄 통화 목록 */
+  const locals = useMemo(() => currenciesForTrip(trip).filter((c) => c !== 'KRW'), [trip]);
+  const candidates = useMemo(() => [...new Set(['KRW', ...locals, 'USD'])], [locals]);
+  const currencies = rates ? candidates.filter((c) => hasRate(c, rates)) : candidates;
+  const missing = rates ? locals.filter((c) => !hasRate(c, rates)) : [];
+  const from = currencies.includes(fromPick) ? fromPick : locals.find((c) => currencies.includes(c)) || 'USD';
 
   /** 화면 진입 시 자동 갱신 — 수동 설정한 환율은 덮어쓰지 않는다 */
   const load = useCallback(async () => {
     const cached = await loadFxRates();
     setRates(cached);
     setLoading(false);
-    if (cached.manual) return;
+    if (cached.manual && Object.keys(cached.manual).length) return;
     try {
       const fresh = await refreshFxRates();
       setRates(fresh);
@@ -68,16 +83,25 @@ export default function ExchangeScreen({ embed }) {
     }
   };
 
+  /** 직접 입력할 수 있는 통화 — 원을 뺀 모든 표시 후보 (환율을 못 가져온 통화 포함) */
+  const editable = candidates.filter((c) => c !== 'KRW');
+
   const openEditor = () => {
-    setEurInput(formatNumberInput(String(Math.round(rates.EUR_KRW * 100) / 100)));
-    setUsdInput(formatNumberInput(String(Math.round(rates.USD_KRW * 100) / 100)));
+    const next = {};
+    for (const cur of editable) {
+      const krw = krwPer(cur, rates);
+      next[cur] = krw ? formatNumberInput(String(Math.round(krw * 100) / 100)) : '';
+    }
+    setInputs(next);
     setNotice('');
     setEditing(true);
   };
 
   const saveEditor = async () => {
     try {
-      const saved = await saveManualRates(parseNumberInput(eurInput), parseNumberInput(usdInput));
+      const entries = {};
+      for (const [cur, text] of Object.entries(inputs)) if (parseNumberInput(text)) entries[cur] = parseNumberInput(text);
+      const saved = await saveManualRates(entries, rates);
       setRates(saved);
       setStale(false);
       setEditing(false);
@@ -87,13 +111,6 @@ export default function ExchangeScreen({ embed }) {
     }
   };
 
-  const results = rates
-    ? CURRENCIES.filter((c) => c !== from).map((to) => ({
-        to,
-        value: convertAmount(parseNumberInput(amount), from, to, rates)
-      }))
-    : [];
-
   if (loading || !rates) {
     return (
       <View style={styles.center}>
@@ -102,7 +119,12 @@ export default function ExchangeScreen({ embed }) {
     );
   }
 
-  const status = rates.manual
+  const manual = rates.manual && Object.keys(rates.manual).length > 0;
+  const results = currencies
+    .filter((c) => c !== from)
+    .map((to) => ({ to, value: convertAmount(parseNumberInput(amount), from, to, rates) }));
+
+  const status = manual
     ? `직접 입력 · ${rates.updatedAt}`
     : stale
       ? `저장된 환율 사용 중${rates.updatedAt ? ` · 기준 ${rates.updatedAt}` : ''}`
@@ -110,15 +132,23 @@ export default function ExchangeScreen({ embed }) {
         ? `기준 ${rates.updatedAt}`
         : '기본 환율 (갱신 전)';
 
+  // 헤더에는 원화 기준으로 현지 통화 환율을 보여 준다 (예: 1 JPY ≈ 8원)
+  const headline = currencies
+    .filter((c) => c !== 'KRW')
+    .slice(0, 3)
+    .map((c) => {
+      const krw = krwPer(c, rates);
+      return `1 ${c} ≈ ${krw >= 100 ? Math.round(krw).toLocaleString() : krw.toFixed(2)}원`;
+    })
+    .join(' · ');
+
   return (
     <StackPage title="환율" contentStyle={styles.body} embed={embed}>
       <View style={styles.card}>
         <View style={styles.rateTop}>
           <View style={styles.rateHead}>
-            <Text style={styles.rateLine}>
-              1 EUR ≈ {Math.round(rates.EUR_KRW).toLocaleString()}원 · 1 USD ≈ {Math.round(rates.USD_KRW).toLocaleString()}원
-            </Text>
-            <Text style={[styles.status, (stale || rates.manual) && styles.statusAccent]}>{status}</Text>
+            <Text style={styles.rateLine}>{headline}</Text>
+            <Text style={[styles.status, (stale || manual) && styles.statusAccent]}>{status}</Text>
           </View>
           <View style={styles.actions}>
             <Pressable
@@ -146,33 +176,28 @@ export default function ExchangeScreen({ embed }) {
         </View>
 
         {notice ? <Text style={styles.notice}>{notice}</Text> : null}
+        {missing.length ? (
+          <Text style={styles.notice}>
+            {missing.map((c) => `${currencyName(c)}(${c})`).join(', ')} 환율은 가져오지 못했어요. 연필 버튼으로 직접 입력할 수 있어요.
+          </Text>
+        ) : null}
 
         {editing ? (
           <View style={styles.editor}>
-            <View style={styles.editRow}>
-              <Text style={styles.editLabel}>1 EUR =</Text>
-              <TextInput
-                style={styles.editInput}
-                value={eurInput}
-                onChangeText={(t) => setEurInput(formatNumberInput(t))}
-                keyboardType="decimal-pad"
-                placeholder="원"
-                placeholderTextColor={colors.faint}
-              />
-              <Text style={styles.editUnit}>원</Text>
-            </View>
-            <View style={styles.editRow}>
-              <Text style={styles.editLabel}>1 USD =</Text>
-              <TextInput
-                style={styles.editInput}
-                value={usdInput}
-                onChangeText={(t) => setUsdInput(formatNumberInput(t))}
-                keyboardType="decimal-pad"
-                placeholder="원"
-                placeholderTextColor={colors.faint}
-              />
-              <Text style={styles.editUnit}>원</Text>
-            </View>
+            {editable.map((cur) => (
+              <View key={cur} style={styles.editRow}>
+                <Text style={styles.editLabel}>1 {cur} =</Text>
+                <TextInput
+                  style={styles.editInput}
+                  value={inputs[cur] ?? ''}
+                  onChangeText={(t) => setInputs((prev) => ({ ...prev, [cur]: formatNumberInput(t) }))}
+                  keyboardType="decimal-pad"
+                  placeholder="원"
+                  placeholderTextColor={colors.faint}
+                />
+                <Text style={styles.editUnit}>원</Text>
+              </View>
+            ))}
             <View style={styles.editActions}>
               <Pressable style={styles.btnGhost} onPress={() => setEditing(false)} accessibilityRole="button">
                 <Text style={styles.btnGhostText}>취소</Text>
@@ -184,21 +209,23 @@ export default function ExchangeScreen({ embed }) {
           </View>
         ) : null}
 
-        <View style={styles.row}>
-          {CURRENCIES.map((cur) => (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row} style={styles.rowScroll}>
+          {currencies.map((cur) => (
             <Pressable
               key={cur}
-              onPress={() => setFrom(cur)}
+              onPress={() => setFromPick(cur)}
               style={[styles.curPill, from === cur && styles.curPillOn]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: from === cur }}
             >
               <Text style={[styles.curText, from === cur && styles.curTextOn]}>{cur}</Text>
             </Pressable>
           ))}
-        </View>
+        </ScrollView>
         <View style={styles.unitRow}>
           <Text style={styles.unitLabel}>입력 통화</Text>
           <Text style={styles.unitValue}>
-            {CURRENCY_NAMES[from]} ({from}) · {CURRENCY_SYMBOLS[from]}
+            {currencyName(from)} ({from})
           </Text>
         </View>
         <View style={styles.inputWrap}>
@@ -225,10 +252,11 @@ export default function ExchangeScreen({ embed }) {
       </View>
       {results.map((row) => (
         <View key={row.to} style={styles.result}>
-          <Text style={styles.resultLabel}>{row.to}</Text>
-          <Text style={styles.resultValue}>
-            {row.to === 'KRW' ? Math.round(row.value).toLocaleString() : row.value.toFixed(2)}
-          </Text>
+          <View>
+            <Text style={styles.resultLabel}>{row.to}</Text>
+            <Text style={styles.resultName}>{currencyName(row.to)}</Text>
+          </View>
+          <Text style={styles.resultValue}>{formatAmount(row.value)}</Text>
         </View>
       ))}
     </StackPage>
@@ -254,10 +282,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   iconBtnPrimary: { backgroundColor: colors.accent },
-  notice: { fontSize: 13, fontWeight: '600', color: colors.accent },
+  notice: { fontSize: 13, fontWeight: '600', color: colors.accent, lineHeight: 19 },
   editor: { gap: space.sm, padding: space.md, borderRadius: radius.control, backgroundColor: colors.surfaceTint },
   editRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  editLabel: { width: 64, fontSize: 14, fontWeight: '700', color: colors.ink },
+  editLabel: { width: 72, fontSize: 14, fontWeight: '700', color: colors.ink },
   editInput: {
     flex: 1,
     fontSize: 16,
@@ -277,8 +305,9 @@ const styles = StyleSheet.create({
   btnGhostText: { fontSize: 14, fontWeight: '700', color: colors.ink },
   btnPrimary: { paddingVertical: 10, paddingHorizontal: space.lg, borderRadius: radius.control, backgroundColor: colors.accent },
   btnPrimaryText: { fontSize: 14, fontWeight: '700', color: '#fff' },
-  row: { flexDirection: 'row', gap: space.xs, backgroundColor: colors.surfaceMuted, borderRadius: radius.pill, padding: 4 },
-  curPill: { flex: 1, paddingVertical: 10, borderRadius: radius.pill, alignItems: 'center' },
+  rowScroll: { flexGrow: 0, backgroundColor: colors.surfaceMuted, borderRadius: radius.pill },
+  row: { flexGrow: 1, gap: space.xs, padding: 4 },
+  curPill: { flexGrow: 1, minWidth: 64, paddingVertical: 10, paddingHorizontal: space.md, borderRadius: radius.pill, alignItems: 'center' },
   curPillOn: { backgroundColor: colors.card, ...shadow.card },
   curText: { fontWeight: '700', color: colors.muted, fontSize: 13 },
   curTextOn: { color: colors.accent },
@@ -310,5 +339,6 @@ const styles = StyleSheet.create({
     borderColor: colors.line
   },
   resultLabel: { ...type.section, color: colors.muted },
+  resultName: { fontSize: 12, color: colors.faint, marginTop: 1 },
   resultValue: { fontSize: 22, fontWeight: '800', color: colors.ink }
 });

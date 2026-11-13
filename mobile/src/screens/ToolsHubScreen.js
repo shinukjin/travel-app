@@ -3,11 +3,13 @@ import { useRoute } from '@react-navigation/native';
 import { HubShell } from '../components/HubShell';
 import ExchangeScreen from './ExchangeScreen';
 import PhraseScreen from './PhraseScreen';
+import EmergencyScreen from './EmergencyScreen';
 import SettingsScreen from './SettingsScreen';
 
 const TABS = [
   { id: 'exchange', label: '환율' },
   { id: 'phrase', label: '회화' },
+  { id: 'emergency', label: '긴급' },
   { id: 'settings', label: '설정' }
 ];
 
@@ -25,6 +27,7 @@ export default function ToolsHubScreen() {
     <HubShell title="도구" tabs={TABS} value={tab} onChange={setTab}>
       {tab === 'exchange' ? <ExchangeScreen embed /> : null}
       {tab === 'phrase' ? <PhraseScreen embed /> : null}
+      {tab === 'emergency' ? <EmergencyScreen embed /> : null}
       {tab === 'settings' ? <SettingsScreen embed /> : null}
     </HubShell>
   );

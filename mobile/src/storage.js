@@ -9,7 +9,8 @@ const KEYS = {
   memos: 'cache.memos',
   media: 'cache.media',
   fxRates: 'cache.fxRates',
-  placeInfo: 'cache.placeInfo'
+  placeInfo: 'cache.placeInfo',
+  emergency: 'cache.emergency'
 };
 
 async function read(key, fallback) {
@@ -39,5 +40,8 @@ export const storage = {
   getFxRates: () => read(KEYS.fxRates, null),
   setFxRates: (value) => write(KEYS.fxRates, value),
   getPlaceInfo: () => read(KEYS.placeInfo, {}),
-  setPlaceInfo: (value) => write(KEYS.placeInfo, value)
+  setPlaceInfo: (value) => write(KEYS.placeInfo, value),
+  /** 긴급 연락처 — 여행 id 별 목록 { [tripId]: [{ id, label, value }] } (이 기기에만 저장) */
+  getEmergency: () => read(KEYS.emergency, {}),
+  setEmergency: (value) => write(KEYS.emergency, value)
 };

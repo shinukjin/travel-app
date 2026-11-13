@@ -6,6 +6,26 @@ import { formatTime } from './theme';
 
 const GuideContext = createContext(null);
 
+function localToday() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
+ * 홈의 여행 선택 순서 — 진행 중·예정 여행을 출발일이 가까운 순으로 먼저, 이미 끝난 여행은 뒤로(최근에 끝난 순).
+ * 기본으로 선택되는 여행도 이 순서의 첫 번째다.
+ */
+export function sortTripsForHome(trips = []) {
+  const today = localToday();
+  const isDone = (t) => Boolean(t.endDate) && t.endDate < today;
+  const upcoming = trips
+    .filter((t) => !isDone(t))
+    .sort((a, b) => String(a.startDate || '9999').localeCompare(String(b.startDate || '9999')));
+  const done = trips.filter(isDone).sort((a, b) => String(b.endDate).localeCompare(String(a.endDate)));
+  return [...upcoming, ...done];
+}
+
 export function GuideProvider({ children }) {
   const navigation = useNavigation();
   const [data, setData] = useState({ trips: [], schedules: {}, vouchers: {}, phrases: {}, packing: {} });
@@ -18,12 +38,12 @@ export function GuideProvider({ children }) {
     setData({ ...cached, packing: cached.packing || {} });
     setTripId((prev) => {
       if (prev && cached.trips.some((t) => t.id === prev)) return prev;
-      return cached.trips[0]?.id ?? null;
+      return sortTripsForHome(cached.trips)[0]?.id ?? null;
     });
     try {
       const fresh = await refreshGuideCache();
       setData({ ...fresh, packing: fresh.packing || {} });
-      setTripId((prev) => (prev && fresh.trips.some((t) => t.id === prev) ? prev : fresh.trips[0]?.id ?? null));
+      setTripId((prev) => (prev && fresh.trips.some((t) => t.id === prev) ? prev : sortTripsForHome(fresh.trips)[0]?.id ?? null));
       setOffline(false);
     } catch {
       setOffline(true);

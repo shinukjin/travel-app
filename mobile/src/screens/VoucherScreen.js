@@ -6,7 +6,8 @@ import { StackPage } from '../components/StackPage';
 import { api } from '../api';
 import { copyPlanText } from '../sharePlan';
 import { colors, radius, space, voucherMeta } from '../theme';
-import { Icon, TripPicker } from '../ui';
+import { Icon, TripLabel } from '../ui';
+import { useToast } from '../Toast';
 
 const TYPES = ['FLIGHT', 'HOTEL', 'TICKET'];
 
@@ -76,6 +77,7 @@ function VoucherCard({ voucher, expanded, onToggle }) {
 }
 
 export default function VoucherScreen({ embed }) {
+  const toast = useToast();
   const { trip, trips, tripId, vouchers, loading, selectTrip, refresh } = useGuide();
   const [filter, setFilter] = useState('ALL');
   const [expanded, setExpanded] = useState({});
@@ -111,6 +113,7 @@ export default function VoucherScreen({ embed }) {
       setBody('');
       setComposing(false);
       await refresh();
+      toast.show('티켓을 저장했어요');
     } catch (error) {
       Alert.alert('저장 실패', error.message);
     } finally {
@@ -128,7 +131,7 @@ export default function VoucherScreen({ embed }) {
 
   return (
     <StackPage title="티켓" contentStyle={styles.body} embed={embed}>
-      {trips.length > 1 ? <TripPicker trips={trips} tripId={tripId} onSelect={selectTrip} /> : null}
+      <TripLabel trip={trip} />
 
       {vouchers.length ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={styles.chips}>
@@ -171,13 +174,13 @@ export default function VoucherScreen({ embed }) {
               const meta = voucherMeta[id];
               return (
                 <Pressable key={id} onPress={() => setType(id)} style={[styles.typePill, on && { backgroundColor: TONE[id].color }]} accessibilityState={{ selected: on }}>
-                  <Icon name={meta.icon} size={16} color={on ? '#fff' : TONE[id].color} />
+                  <Icon name={meta.icon} size={16} color={on ? colors.accentDark : TONE[id].color} />
                   <Text style={[styles.typeText, on && styles.typeTextOn]}>{meta.label}</Text>
                 </Pressable>
               );
             })}
           </View>
-          <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="제목 (예: 인천 → 바르셀로나 KE385)" placeholderTextColor={colors.faint} />
+          <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="제목 (예: 인천 → 도착 도시 KE000)" placeholderTextColor={colors.faint} />
           <TextInput
             style={[styles.input, styles.area]}
             value={body}
@@ -214,9 +217,9 @@ const styles = StyleSheet.create({
   chipScroll: { flexGrow: 0 },
   chips: { gap: space.sm, paddingRight: space.lg },
   chip: { paddingHorizontal: space.md, paddingVertical: 9, borderRadius: radius.pill, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
-  chipOn: { backgroundColor: colors.navy, borderColor: colors.navy },
+  chipOn: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
   chipText: { fontSize: 13, fontWeight: '700', color: colors.muted },
-  chipTextOn: { color: '#fff' },
+  chipTextOn: { color: colors.accentDark },
   ticket: { borderRadius: radius.sheet, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
   ticketHead: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.lg },
   typeIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
