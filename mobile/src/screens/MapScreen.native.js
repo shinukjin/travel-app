@@ -9,6 +9,7 @@ import { useMapExpand } from '../hooks/useMapExpand';
 import { colors } from '../theme';
 import { Icon } from '../ui';
 import { useGuide } from '../GuideContext';
+import { pickCurrentStop } from '../currentStop';
 import { MapEmptyHint } from '../components/MapEmptyHint';
 import { computeSnaps } from '../components/mapSheetSnap';
 import { Text } from '../Text';
@@ -219,7 +220,9 @@ export default function MapScreen() {
 
   const goSchedule = () => {
     setAtHere(false);
-    if (scheduleRegion) mapRef.current?.animateToRegion(visibleRegion(scheduleRegion, true), 350);
+    // 지금 시각의 일정 장소로 이동 (오늘이 아니면 그날 첫 일정)
+    const current = pickCurrentStop(markers, day?.date);
+    if (current) focusItem(current);
     else Alert.alert('표시할 일정이 없어요', '이 날짜에는 좌표가 있는 장소가 없어요.');
   };
 

@@ -3,6 +3,7 @@ import { MapEmptyHint } from '../components/MapEmptyHint';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useGuide } from '../GuideContext';
+import { pickCurrentStop } from '../currentStop';
 import MapSheet from '../components/MapSheet';
 import { computeSnaps } from '../components/mapSheetSnap';
 import GoogleMap from '../components/GoogleMap.web';
@@ -63,6 +64,11 @@ export default function MapScreen() {
         markers={markers}
         fitKey={`${day?.id || 'none'}:${fitNonce}`}
         onRecenterRequest={() => setFitNonce((value) => value + 1)}
+        onScheduleRequest={() => {
+          // 지금 시각의 일정 장소로 이동 (오늘이 아니면 그날 첫 일정)
+          const current = pickCurrentStop(markers, day?.date);
+          if (current) focusItem(current);
+        }}
         selectedId={selected?.id}
         onMarkerPress={(item) => setSelected(item)}
         me={me}

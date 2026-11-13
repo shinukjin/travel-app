@@ -46,6 +46,7 @@ export default function GoogleMap({
   markers,
   fitKey,
   onRecenterRequest,
+  onScheduleRequest,
   onMarkerPress,
   selectedId,
   center,
@@ -242,7 +243,9 @@ export default function GoogleMap({
           style={({ pressed }) => [styles.zoomBtn, pressed && styles.zoomPressed]}
           onPress={() => {
             setAtMe(false);
-            fit();
+            // 일정 화면에서는 현재 시각의 일정 장소로, 그 외에는 전체 마커가 보이게
+            if (onScheduleRequest) onScheduleRequest();
+            else fit();
           }}
           accessibilityRole="button"
           accessibilityLabel="일정 위치로"
